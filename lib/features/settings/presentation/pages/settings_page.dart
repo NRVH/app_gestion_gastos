@@ -1,0 +1,813 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../../../core/services/auth_service.dart';
+import '../../../../core/services/firestore_service.dart';
+import '../../../../core/config/theme_config.dart';
+import '../../../../core/router/app_router.dart';
+import '../../../../core/providers/household_provider.dart';
+import '../../../../core/providers/member_provider.dart';
+import '../../../../core/utils/validators.dart';
+import '../../../../core/utils/formatters.dart';
+import '../../../../core/models/member.dart';
+
+class SettingsPage extends ConsumerWidget {
+  const SettingsPage({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
+    final colorScheme = ref.watch(colorSchemeProvider);
+    final user = ref.watch(currentUserProvider);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Configuración'),
+      ),
+      body: ListView(
+        children: [
+          // User info
+          if (user != null)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      CircleAvatar(
+                        radius: 40,
+                        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                        child: Icon(
+                          Icons.person,
+                          size: 40,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        user.displayName ?? 'Usuario',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        user.email ?? '',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Colors.grey,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // Profile Settings
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'Perfil',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+          ),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.person),
+                  title: const Text('Editar nombre'),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  onTap: () => _showEditNameDialog(context, ref),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.attach_money),
+                  title: const Text('Salario mensual'),
+                  subtitle: const Text('Configure su salario para calcular aportes'),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  onTap: () => _showEditSalaryDialog(context, ref),
+                ),
+                if (user != null && !_isGoogleLinked(user)) ...[
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.link),
+                    title: const Text('Vincular con Google'),
+                    subtitle: const Text('Inicia sesión también con tu cuenta de Google'),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                    onTap: () => _linkWithGoogle(context, ref),
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          // Household Settings
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'Casa',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+          ),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.home),
+                  title: const Text('Nombre de la casa'),
+                  subtitle: const Text('Cambiar nombre del household'),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  onTap: () => _showEditHouseholdNameDialog(context, ref),
+                ),
+                const Divider(height: 1),
+                Consumer(
+                  builder: (context, ref, child) {
+                    final householdAsync = ref.watch(currentHouseholdProvider);
+                    return householdAsync.when(
+                      data: (household) => ListTile(
+                        leading: const Icon(Icons.savings),
+                        title: const Text('Meta mensual'),
+                        subtitle: Text(
+                          'Se calcula automáticamente: ${CurrencyFormatter.format(household?.monthTarget ?? 0)}',
+                          style: const TextStyle(fontStyle: FontStyle.italic),
+                        ),
+                        trailing: const Tooltip(
+                          message: 'Edita las categorías para cambiar la meta',
+                          child: Icon(Icons.info_outline),
+                        ),
+                      ),
+                      loading: () => const ListTile(
+                        leading: Icon(Icons.savings),
+                        title: Text('Meta mensual'),
+                        subtitle: Text('Cargando...'),
+                      ),
+                      error: (_, __) => const SizedBox.shrink(),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.delete_forever, color: Colors.red),
+                  title: const Text(
+                    'Eliminar casa',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                  subtitle: const Text('Borrar todo y empezar de nuevo'),
+                  onTap: () => _deleteHousehold(context, ref),
+                ),
+              ],
+            ),
+          ),
+
+          // Appearance
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'Apariencia',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+          ),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.dark_mode),
+                  title: const Text('Tema'),
+                  subtitle: Text(_getThemeModeText(themeMode)),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  onTap: () => _showThemeModeDialog(context, ref),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.palette),
+                  title: const Text('Color'),
+                  subtitle: Text(_getColorSchemeText(colorScheme)),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  onTap: () => _showColorSchemeDialog(context, ref),
+                ),
+              ],
+            ),
+          ),
+
+          // Account
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
+            child: Text(
+              'Cuenta',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+          ),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            child: ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text(
+                'Cerrar sesión',
+                style: TextStyle(color: Colors.red),
+              ),
+              onTap: () => _signOut(context, ref),
+            ),
+          ),
+
+          // Version
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(
+              child: Text(
+                'Versión 1.0.0',
+                style: TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getThemeModeText(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.light:
+        return 'Claro';
+      case ThemeMode.dark:
+        return 'Oscuro';
+      case ThemeMode.system:
+        return 'Sistema';
+    }
+  }
+
+  String _getColorSchemeText(AppColorScheme scheme) {
+    switch (scheme) {
+      case AppColorScheme.blue:
+        return 'Azul';
+      case AppColorScheme.green:
+        return 'Verde';
+      case AppColorScheme.purple:
+        return 'Morado';
+      case AppColorScheme.orange:
+        return 'Naranja';
+      case AppColorScheme.red:
+        return 'Rojo';
+    }
+  }
+
+  Future<void> _showThemeModeDialog(BuildContext context, WidgetRef ref) async {
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Selecciona el tema'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RadioListTile<ThemeMode>(
+                title: const Text('Claro'),
+                value: ThemeMode.light,
+                groupValue: ref.read(themeModeProvider),
+                onChanged: (value) {
+                  if (value != null) {
+                    ref.read(themeModeProvider.notifier).setThemeMode(value);
+                    Navigator.of(context).pop();
+                  }
+                },
+              ),
+              RadioListTile<ThemeMode>(
+                title: const Text('Oscuro'),
+                value: ThemeMode.dark,
+                groupValue: ref.read(themeModeProvider),
+                onChanged: (value) {
+                  if (value != null) {
+                    ref.read(themeModeProvider.notifier).setThemeMode(value);
+                    Navigator.of(context).pop();
+                  }
+                },
+              ),
+              RadioListTile<ThemeMode>(
+                title: const Text('Sistema'),
+                value: ThemeMode.system,
+                groupValue: ref.read(themeModeProvider),
+                onChanged: (value) {
+                  if (value != null) {
+                    ref.read(themeModeProvider.notifier).setThemeMode(value);
+                    Navigator.of(context).pop();
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showColorSchemeDialog(BuildContext context, WidgetRef ref) async {
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Selecciona el color'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: AppColorScheme.values.map((scheme) {
+              return RadioListTile<AppColorScheme>(
+                title: Text(_getColorSchemeText(scheme)),
+                value: scheme,
+                groupValue: ref.read(colorSchemeProvider),
+                onChanged: (value) {
+                  if (value != null) {
+                    ref.read(colorSchemeProvider.notifier).setColorScheme(value);
+                    Navigator.of(context).pop();
+                  }
+                },
+              );
+            }).toList(),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showEditHouseholdNameDialog(BuildContext context, WidgetRef ref) async {
+    final householdId = ref.read(currentHouseholdIdProvider);
+    if (householdId == null) return;
+
+    // Obtener household directamente del stream
+    final householdStream = ref.read(firestoreServiceProvider).watchHousehold(householdId);
+    final household = await householdStream.first;
+    
+    if (household == null) return;
+
+    final nameController = TextEditingController(text: household.name);
+
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Nombre de la casa'),
+          content: TextFormField(
+            controller: nameController,
+            decoration: const InputDecoration(
+              labelText: 'Nombre',
+              hintText: 'Ej: Nuestra Casa',
+            ),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final newName = nameController.text.trim();
+                if (newName.isEmpty) return;
+
+                try {
+                  await ref.read(firestoreServiceProvider).updateHousehold(
+                    householdId,
+                    {'name': newName},
+                  );
+
+                  if (context.mounted) {
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Nombre actualizado')),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error: ${e.toString()}')),
+                    );
+                  }
+                }
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        );
+      },
+    );
+  }  Future<void> _showEditMonthTargetDialog(BuildContext context, WidgetRef ref) async {
+    final householdId = ref.read(currentHouseholdIdProvider);
+    if (householdId == null) return;
+
+    // Obtener household directamente del stream
+    final householdStream = ref.read(firestoreServiceProvider).watchHousehold(householdId);
+    final household = await householdStream.first;
+    
+    if (household == null) return;
+
+    final targetController = TextEditingController(
+      text: household.monthTarget.toStringAsFixed(0),
+    );
+    final formKey = GlobalKey<FormState>();
+
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Meta mensual'),
+          content: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Meta actual: ${CurrencyFormatter.format(household.monthTarget)}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: targetController,
+                      decoration: const InputDecoration(
+                        labelText: 'Nueva meta mensual',
+                        hintText: 'Ej: 76025',
+                        prefixText: '\$',
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: Validators.amount,
+                  autofocus: true,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (!formKey.currentState!.validate()) return;
+
+                final newTarget = double.parse(targetController.text);
+
+                try {
+                  await ref.read(firestoreServiceProvider).updateHousehold(
+                    householdId,
+                    {'monthTarget': newTarget},
+                  );
+
+                  if (context.mounted) {
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Meta actualizada')),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error: ${e.toString()}')),
+                    );
+                  }
+                }
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteHousehold(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('⚠️ Eliminar Casa'),
+          content: const Text(
+            'Esto eliminará TODA la información:\n\n'
+            '• Todas las categorías\n'
+            '• Todos los gastos\n'
+            '• Todas las aportaciones\n'
+            '• Todos los miembros\n\n'
+            'Esta acción NO se puede deshacer.\n\n'
+            '¿Estás seguro?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Sí, eliminar todo'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      final householdId = ref.read(currentHouseholdIdProvider);
+      if (householdId == null) return;
+
+      try {
+        await ref.read(firestoreServiceProvider).deleteHousehold(householdId);
+        ref.read(currentHouseholdIdProvider.notifier).state = null;
+
+        if (context.mounted) {
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            AppRouter.createHousehold,
+            (route) => false,
+          );
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Casa eliminada. Puedes crear una nueva.')),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: ${e.toString()}')),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _showEditNameDialog(BuildContext context, WidgetRef ref) async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
+    final nameController = TextEditingController(text: user.displayName);
+
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Editar nombre'),
+          content: TextFormField(
+            controller: nameController,
+            decoration: const InputDecoration(
+              labelText: 'Nombre',
+              hintText: 'Tu nombre',
+            ),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final newName = nameController.text.trim();
+                if (newName.isEmpty) return;
+
+                try {
+                  await ref.read(authServiceProvider).updateDisplayName(newName);
+                  
+                  // También actualizar en el miembro del household
+                  final householdId = ref.read(currentHouseholdIdProvider);
+                  if (householdId != null) {
+                    await ref.read(firestoreServiceProvider).updateMember(
+                      householdId,
+                      user.uid,
+                      {'displayName': newName},
+                    );
+                  }
+
+                  if (context.mounted) {
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Nombre actualizado')),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error: ${e.toString()}')),
+                    );
+                  }
+                }
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _showEditSalaryDialog(BuildContext context, WidgetRef ref) async {
+    final user = ref.read(currentUserProvider);
+    final householdId = ref.read(currentHouseholdIdProvider);
+    
+    if (user == null || householdId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo cargar la información')),
+      );
+      return;
+    }
+
+    final salaryController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return StreamBuilder<Member?>(
+          stream: ref.read(firestoreServiceProvider).watchMember(householdId, user.uid),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return AlertDialog(
+                title: const Text('Error'),
+                content: Text('No se pudo cargar tu información: ${snapshot.error}'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cerrar'),
+                  ),
+                ],
+              );
+            }
+
+            if (!snapshot.hasData) {
+              return const AlertDialog(
+                title: Text('Salario mensual'),
+                content: Center(
+                  child: CircularProgressIndicator(),
+                ),
+              );
+            }
+
+            final member = snapshot.data;
+            if (member == null) {
+              return AlertDialog(
+                title: const Text('Error'),
+                content: const Text('No se pudo cargar tu información'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cerrar'),
+                  ),
+                ],
+              );
+            }
+
+            // Inicializar el controlador solo si está vacío
+            if (salaryController.text.isEmpty && member.monthlySalary > 0) {
+              salaryController.text = member.monthlySalary.toStringAsFixed(0);
+            }
+
+            return AlertDialog(
+              title: const Text('Salario mensual'),
+              content: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ingrese su salario mensual para calcular automáticamente su porcentaje de aportación',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 16),
+                    if (member.monthlySalary > 0) ...[
+                      Text(
+                        'Salario actual: ${CurrencyFormatter.format(member.monthlySalary)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        'Tu aportación: ${(member.share * 100).toStringAsFixed(2)}%',
+                        style: TextStyle(color: Colors.grey[700]),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    TextFormField(
+                      controller: salaryController,
+                      decoration: const InputDecoration(
+                        labelText: 'Salario mensual',
+                        hintText: 'Ej: 76700',
+                        prefixText: '\$',
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: Validators.amount,
+                      autofocus: true,
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (!formKey.currentState!.validate()) return;
+
+                    final newSalary = double.parse(salaryController.text);
+
+                    try {
+                      final firestoreService = ref.read(firestoreServiceProvider);
+                      
+                      // Actualizar el salario del miembro
+                      await firestoreService.updateMember(
+                        householdId,
+                        user.uid,
+                        {'monthlySalary': newSalary},
+                      );
+
+                      // Recalcular porcentajes de todos los miembros
+                      await firestoreService.recalculateMemberShares(householdId);
+
+                      if (context.mounted) {
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Salario y porcentajes actualizados')),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Error: ${e.toString()}')),
+                        );
+                      }
+                    }
+                  },
+                  child: const Text('Guardar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _signOut(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Cerrar sesión'),
+          content: const Text('¿Estás seguro de cerrar sesión?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Cerrar sesión'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true && context.mounted) {
+      await ref.read(authServiceProvider).signOut();
+      if (context.mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          AppRouter.login,
+          (route) => false,
+        );
+      }
+    }
+  }
+
+  bool _isGoogleLinked(User user) {
+    // Check if user has Google as a sign-in method
+    return user.providerData.any((info) => info.providerId == 'google.com');
+  }
+
+  Future<void> _linkWithGoogle(BuildContext context, WidgetRef ref) async {
+    try {
+      await ref.read(authServiceProvider).linkWithGoogle();
+      
+      if (!context.mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cuenta de Google vinculada exitosamente')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: ${e.toString()}')),
+      );
+    }
+  }
+}

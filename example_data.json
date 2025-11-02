@@ -1,0 +1,292 @@
+{
+  "households": {
+    "household_example_1": {
+      "id": "household_example_1",
+      "name": "Casa González",
+      "month": "2025-11",
+      "monthTarget": 76025.0,
+      "monthPool": 50000.0,
+      "carryOver": 5000.0,
+      "members": ["user_uid_1", "user_uid_2"],
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "updatedAt": "2025-11-01T00:00:00.000Z"
+    }
+  },
+  "members": {
+    "user_uid_1": {
+      "uid": "user_uid_1",
+      "displayName": "Juan González",
+      "email": "juan@example.com",
+      "role": "owner",
+      "share": 0.7333,
+      "contributedThisMonth": 35000.0,
+      "fcmTokens": [],
+      "joinedAt": "2025-01-01T00:00:00.000Z"
+    },
+    "user_uid_2": {
+      "uid": "user_uid_2",
+      "displayName": "María López",
+      "email": "maria@example.com",
+      "role": "partner",
+      "share": 0.2667,
+      "contributedThisMonth": 15000.0,
+      "fcmTokens": [],
+      "joinedAt": "2025-01-15T00:00:00.000Z"
+    }
+  },
+  "categories": [
+    {
+      "id": "cat_hipoteca",
+      "name": "Hipoteca",
+      "monthlyLimit": 20000.0,
+      "spentThisMonth": 20000.0,
+      "dueDay": 5,
+      "canGoNegative": false,
+      "icon": "🏠",
+      "color": "#FF5722",
+      "createdAt": "2025-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "cat_auto",
+      "name": "Auto",
+      "monthlyLimit": 8000.0,
+      "spentThisMonth": 6500.0,
+      "dueDay": 10,
+      "canGoNegative": false,
+      "icon": "🚗",
+      "color": "#2196F3",
+      "createdAt": "2025-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "cat_servicios",
+      "name": "Servicios",
+      "monthlyLimit": 5000.0,
+      "spentThisMonth": 4800.0,
+      "dueDay": 15,
+      "canGoNegative": false,
+      "icon": "💡",
+      "color": "#FFC107",
+      "createdAt": "2025-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "cat_supermercado",
+      "name": "Supermercado",
+      "monthlyLimit": 12000.0,
+      "spentThisMonth": 9500.0,
+      "dueDay": null,
+      "canGoNegative": false,
+      "icon": "🛒",
+      "color": "#4CAF50",
+      "createdAt": "2025-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "cat_ocio",
+      "name": "Ocio",
+      "monthlyLimit": 5000.0,
+      "spentThisMonth": 3200.0,
+      "dueDay": null,
+      "canGoNegative": true,
+      "icon": "🎉",
+      "color": "#9C27B0",
+      "createdAt": "2025-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "cat_suplementos",
+      "name": "Suplementos",
+      "monthlyLimit": 2000.0,
+      "spentThisMonth": 1800.0,
+      "dueDay": null,
+      "canGoNegative": false,
+      "icon": "💊",
+      "color": "#E91E63",
+      "createdAt": "2025-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "cat_otros",
+      "name": "Otros",
+      "monthlyLimit": 3000.0,
+      "spentThisMonth": 1500.0,
+      "dueDay": null,
+      "canGoNegative": true,
+      "icon": "📦",
+      "color": "#607D8B",
+      "createdAt": "2025-01-01T00:00:00.000Z"
+    }
+  ],
+  "expenses": [
+    {
+      "id": "exp_1",
+      "by": "user_uid_1",
+      "byDisplayName": "Juan González",
+      "categoryId": "cat_hipoteca",
+      "categoryName": "Hipoteca",
+      "amount": 20000.0,
+      "date": "2025-11-05T10:00:00.000Z",
+      "note": "Pago mensual hipoteca",
+      "createdAt": "2025-11-05T10:30:00.000Z"
+    },
+    {
+      "id": "exp_2",
+      "by": "user_uid_1",
+      "byDisplayName": "Juan González",
+      "categoryId": "cat_auto",
+      "categoryName": "Auto",
+      "amount": 5000.0,
+      "date": "2025-11-10T14:20:00.000Z",
+      "note": "Pago mensual auto",
+      "createdAt": "2025-11-10T14:30:00.000Z"
+    },
+    {
+      "id": "exp_3",
+      "by": "user_uid_2",
+      "byDisplayName": "María López",
+      "categoryId": "cat_auto",
+      "categoryName": "Auto",
+      "amount": 1500.0,
+      "date": "2025-11-12T09:00:00.000Z",
+      "note": "Gasolina y mantenimiento",
+      "createdAt": "2025-11-12T09:15:00.000Z"
+    },
+    {
+      "id": "exp_4",
+      "by": "user_uid_1",
+      "byDisplayName": "Juan González",
+      "categoryId": "cat_servicios",
+      "categoryName": "Servicios",
+      "amount": 2800.0,
+      "date": "2025-11-15T11:00:00.000Z",
+      "note": "Luz, agua, gas",
+      "createdAt": "2025-11-15T11:20:00.000Z"
+    },
+    {
+      "id": "exp_5",
+      "by": "user_uid_2",
+      "byDisplayName": "María López",
+      "categoryId": "cat_servicios",
+      "categoryName": "Servicios",
+      "amount": 2000.0,
+      "date": "2025-11-16T13:00:00.000Z",
+      "note": "Internet y teléfono",
+      "createdAt": "2025-11-16T13:10:00.000Z"
+    },
+    {
+      "id": "exp_6",
+      "by": "user_uid_2",
+      "byDisplayName": "María López",
+      "categoryId": "cat_supermercado",
+      "categoryName": "Supermercado",
+      "amount": 4500.0,
+      "date": "2025-11-08T16:30:00.000Z",
+      "note": "Compra semanal",
+      "createdAt": "2025-11-08T17:00:00.000Z"
+    },
+    {
+      "id": "exp_7",
+      "by": "user_uid_1",
+      "byDisplayName": "Juan González",
+      "categoryId": "cat_supermercado",
+      "categoryName": "Supermercado",
+      "amount": 5000.0,
+      "date": "2025-11-18T18:00:00.000Z",
+      "note": "Despensa del mes",
+      "createdAt": "2025-11-18T18:30:00.000Z"
+    },
+    {
+      "id": "exp_8",
+      "by": "user_uid_1",
+      "byDisplayName": "Juan González",
+      "categoryId": "cat_ocio",
+      "categoryName": "Ocio",
+      "amount": 880.0,
+      "date": "2025-11-20T20:00:00.000Z",
+      "note": "Cena familiar restaurante",
+      "createdAt": "2025-11-20T21:00:00.000Z"
+    },
+    {
+      "id": "exp_9",
+      "by": "user_uid_2",
+      "byDisplayName": "María López",
+      "categoryId": "cat_ocio",
+      "categoryName": "Ocio",
+      "amount": 2320.0,
+      "date": "2025-11-22T15:00:00.000Z",
+      "note": "Cine y cafetería",
+      "createdAt": "2025-11-22T16:00:00.000Z"
+    },
+    {
+      "id": "exp_10",
+      "by": "user_uid_1",
+      "byDisplayName": "Juan González",
+      "categoryId": "cat_suplementos",
+      "categoryName": "Suplementos",
+      "amount": 1800.0,
+      "date": "2025-11-25T12:00:00.000Z",
+      "note": "Vitaminas y proteínas",
+      "createdAt": "2025-11-25T12:30:00.000Z"
+    },
+    {
+      "id": "exp_11",
+      "by": "user_uid_2",
+      "byDisplayName": "María López",
+      "categoryId": "cat_otros",
+      "categoryName": "Otros",
+      "amount": 1500.0,
+      "date": "2025-11-28T10:00:00.000Z",
+      "note": "Regalos varios",
+      "createdAt": "2025-11-28T10:30:00.000Z"
+    }
+  ],
+  "contributions": [
+    {
+      "id": "cont_1",
+      "by": "user_uid_1",
+      "byDisplayName": "Juan González",
+      "amount": 25000.0,
+      "date": "2025-11-01T08:00:00.000Z",
+      "note": "Aportación quincena 1",
+      "createdAt": "2025-11-01T08:15:00.000Z"
+    },
+    {
+      "id": "cont_2",
+      "by": "user_uid_2",
+      "byDisplayName": "María López",
+      "amount": 15000.0,
+      "date": "2025-11-01T09:00:00.000Z",
+      "note": "Aportación mensual completa",
+      "createdAt": "2025-11-01T09:15:00.000Z"
+    },
+    {
+      "id": "cont_3",
+      "by": "user_uid_1",
+      "byDisplayName": "Juan González",
+      "amount": 10000.0,
+      "date": "2025-11-15T08:00:00.000Z",
+      "note": "Aportación quincena 2",
+      "createdAt": "2025-11-15T08:20:00.000Z"
+    }
+  ],
+  "monthHistory": {
+    "2025-10": {
+      "id": "2025-10",
+      "householdId": "household_example_1",
+      "monthTarget": 76025.0,
+      "totalContributed": 80000.0,
+      "totalSpent": 75000.0,
+      "carryOverToNext": 5000.0,
+      "closedAt": "2025-10-31T23:59:59.000Z",
+      "memberContributions": {
+        "user_uid_1": 55000.0,
+        "user_uid_2": 25000.0
+      },
+      "categorySpending": {
+        "cat_hipoteca": 20000.0,
+        "cat_auto": 8000.0,
+        "cat_servicios": 5000.0,
+        "cat_supermercado": 15000.0,
+        "cat_ocio": 8000.0,
+        "cat_suplementos": 2000.0,
+        "cat_otros": 17000.0
+      }
+    }
+  }
+}
