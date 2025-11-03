@@ -327,12 +327,18 @@ class SettingsPage extends ConsumerWidget {
           ),
 
           // Version
-          const Padding(
-            padding: EdgeInsets.all(16),
+          Padding(
+            padding: const EdgeInsets.all(16),
             child: Center(
-              child: Text(
-                'Versión 1.0.0',
-                style: TextStyle(color: Colors.grey, fontSize: 12),
+              child: FutureBuilder<PackageInfo>(
+                future: PackageInfo.fromPlatform(),
+                builder: (context, snapshot) {
+                  final version = snapshot.hasData ? snapshot.data!.version : '...';
+                  return Text(
+                    'Versión $version',
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  );
+                },
               ),
             ),
           ),

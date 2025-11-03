@@ -100,8 +100,9 @@ class UpdateService {
       
       // Obtener info de la app actual
       final packageInfo = await PackageInfo.fromPlatform();
+      print('📱 [Update] PackageInfo - version: ${packageInfo.version}, buildNumber: ${packageInfo.buildNumber}');
       final currentVersion = Version.parse(packageInfo.version);
-      print('📱 [Update] Versión actual: $currentVersion');
+      print('📱 [Update] Versión actual parseada: $currentVersion');
 
       // Consultar GitHub API para obtener el último release
       final response = await http.get(
