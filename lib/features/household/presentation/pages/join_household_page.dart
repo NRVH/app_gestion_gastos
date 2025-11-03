@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/services/firestore_service.dart';
 import '../../../../core/services/auth_service.dart';
+import '../../../../core/services/messaging_service.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../core/providers/household_provider.dart';
@@ -49,7 +50,29 @@ class _JoinHouseholdPageState extends ConsumerState<JoinHouseholdPage> {
       if (!mounted) return;
 
       // Establecer el household actual
-      ref.read(currentHouseholdIdProvider.notifier).state = householdId;
+      await ref.read(currentHouseholdIdProvider.notifier).setHouseholdId(householdId);
+
+      // Guardar el FCM token para este household
+      try {
+        print('🔔 [JoinHousehold] Guardando FCM token después de unirse...');
+        final messagingService = ref.read(messagingServiceProvider);
+        final token = await messagingService.getToken();
+        
+        if (token != null) {
+          print('🔔 [JoinHousehold] Token obtenido: ${token.substring(0, 20)}...');
+          await ref.read(firestoreServiceProvider).updateFcmToken(
+            householdId,
+            user.uid,
+            token,
+          );
+          print('🔔 [JoinHousehold] ✅ Token guardado exitosamente');
+        } else {
+          print('⚠️ [JoinHousehold] No se pudo obtener el FCM token');
+        }
+      } catch (e) {
+        print('❌ [JoinHousehold] Error al guardar token: $e');
+        // No bloqueamos la navegación si falla el token
+      }
 
       if (!mounted) return;
 

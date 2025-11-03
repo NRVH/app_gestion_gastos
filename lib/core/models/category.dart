@@ -10,11 +10,13 @@ class Category with _$Category {
     required String name,
     required double monthlyLimit,
     @Default(0.0) double spentThisMonth,
+    @Default(0.0) double accumulatedBalance, // Balance acumulado del mes anterior
     @Default(null) int? dueDay, // Day of month (1-31) for priority display
     @Default(false) bool canGoNegative,
     @Default(null) String? icon, // Icon name or emoji
     @Default(null) String? color, // Hex color code
     @Default(null) DateTime? createdAt,
+    @Default(0) int sortOrder, // Custom order for manual sorting
   }) = _Category;
 
   factory Category.fromJson(Map<String, dynamic> json) =>
@@ -22,16 +24,20 @@ class Category with _$Category {
 }
 
 extension CategoryExtension on Category {
-  double get remainingBudget => (monthlyLimit - spentThisMonth).clamp(0.0, double.infinity);
+  // Presupuesto total disponible este mes (límite fijo + balance acumulado)
+  double get totalAvailable => monthlyLimit + accumulatedBalance;
+  
+  // Presupuesto restante este mes
+  double get remainingBudget => (totalAvailable - spentThisMonth).clamp(0.0, double.infinity);
   
   double get progress {
-    if (monthlyLimit == 0) return 0.0;
-    return (spentThisMonth / monthlyLimit).clamp(0.0, 2.0); // Allow 200% to show excess
+    if (totalAvailable == 0) return 0.0;
+    return (spentThisMonth / totalAvailable).clamp(0.0, 2.0); // Allow 200% to show excess
   }
   
-  bool get isOverBudget => spentThisMonth > monthlyLimit;
+  bool get isOverBudget => spentThisMonth > totalAvailable;
   
-  bool get isNearLimit => spentThisMonth >= monthlyLimit * 0.8 && !isOverBudget;
+  bool get isNearLimit => spentThisMonth >= totalAvailable * 0.8 && !isOverBudget;
   
   CategoryStatus get status {
     if (isOverBudget) return CategoryStatus.overBudget;

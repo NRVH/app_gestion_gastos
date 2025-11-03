@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/firestore_service.dart';
+import '../../../../core/services/migration_service.dart';
 import '../../../../core/config/theme_config.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/providers/household_provider.dart';
@@ -10,6 +11,7 @@ import '../../../../core/providers/member_provider.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/models/member.dart';
+import '../../../household/presentation/pages/members_page.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -130,6 +132,14 @@ class SettingsPage extends ConsumerWidget {
                   onTap: () => _showEditHouseholdNameDialog(context, ref),
                 ),
                 const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.people),
+                  title: const Text('Miembros'),
+                  subtitle: const Text('Gestionar quién está en la casa'),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  onTap: () => _navigateToMembers(context),
+                ),
+                const Divider(height: 1),
                 Consumer(
                   builder: (context, ref, child) {
                     final householdAsync = ref.watch(currentHouseholdProvider);
@@ -154,6 +164,16 @@ class SettingsPage extends ConsumerWidget {
                       error: (_, __) => const SizedBox.shrink(),
                     );
                   },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.build, color: Colors.orange),
+                  title: const Text(
+                    'Reparar datos',
+                    style: TextStyle(color: Colors.orange),
+                  ),
+                  subtitle: const Text('Arreglar datos corruptos o incompletos'),
+                  onTap: () => _repairHouseholdData(context, ref),
                 ),
                 const Divider(height: 1),
                 ListTile(
@@ -216,13 +236,27 @@ class SettingsPage extends ConsumerWidget {
           ),
           Card(
             margin: const EdgeInsets.symmetric(horizontal: 16),
-            child: ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text(
-                'Cerrar sesión',
-                style: TextStyle(color: Colors.red),
-              ),
-              onTap: () => _signOut(context, ref),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.logout, color: Colors.red),
+                  title: const Text(
+                    'Cerrar sesión',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                  onTap: () => _signOut(context, ref),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.delete_forever, color: Colors.red),
+                  title: const Text(
+                    'Eliminar cuenta',
+                    style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: const Text('Eliminar permanentemente tu cuenta y todos tus datos'),
+                  onTap: () => _deleteAccount(context, ref),
+                ),
+              ],
             ),
           ),
 
@@ -265,6 +299,14 @@ class SettingsPage extends ConsumerWidget {
       case AppColorScheme.red:
         return 'Rojo';
     }
+  }
+
+  void _navigateToMembers(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const MembersPage(),
+      ),
+    );
   }
 
   Future<void> _showThemeModeDialog(BuildContext context, WidgetRef ref) async {
@@ -524,7 +566,7 @@ class SettingsPage extends ConsumerWidget {
 
       try {
         await ref.read(firestoreServiceProvider).deleteHousehold(householdId);
-        ref.read(currentHouseholdIdProvider.notifier).state = null;
+        await ref.read(currentHouseholdIdProvider.notifier).clear();
 
         if (context.mounted) {
           Navigator.of(context).pushNamedAndRemoveUntil(
@@ -756,6 +798,83 @@ class SettingsPage extends ConsumerWidget {
     );
   }
 
+  Future<void> _repairHouseholdData(BuildContext context, WidgetRef ref) async {
+    final householdId = ref.read(currentHouseholdIdProvider);
+    
+    if (householdId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No hay household seleccionado')),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Reparar datos'),
+          content: const Text(
+            'Esta acción revisará y corregirá cualquier dato incompleto o corrupto en tu household. '
+            '¿Deseas continuar?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Reparar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true && context.mounted) {
+      // Mostrar diálogo de carga
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Reparando datos...'),
+            ],
+          ),
+        ),
+      );
+
+      try {
+        final migrationService = MigrationService();
+        await migrationService.migrateHouseholdMembers(householdId);
+
+        if (context.mounted) {
+          Navigator.of(context).pop(); // Cerrar diálogo de carga
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Datos reparados exitosamente'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          Navigator.of(context).pop(); // Cerrar diálogo de carga
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ Error al reparar datos: ${e.toString()}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   Future<void> _signOut(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -783,6 +902,379 @@ class SettingsPage extends ConsumerWidget {
         Navigator.of(context).pushNamedAndRemoveUntil(
           AppRouter.login,
           (route) => false,
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteAccount(BuildContext context, WidgetRef ref) async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
+    // Primer diálogo de confirmación
+    final firstConfirmation = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.warning, color: Colors.red),
+              SizedBox(width: 8),
+              Text('⚠️ Eliminar Cuenta'),
+            ],
+          ),
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Esta acción es permanente e irreversible.',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 16),
+              Text('Se eliminarán:'),
+              SizedBox(height: 8),
+              Text('• Tu cuenta de usuario'),
+              Text('• Todos tus datos personales'),
+              Text('• Tus aportaciones y gastos'),
+              Text('• Los households donde eres el único miembro'),
+              SizedBox(height: 16),
+              Text(
+                '¿Estás absolutamente seguro?',
+                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Continuar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (firstConfirmation != true || !context.mounted) return;
+
+    // Segundo diálogo de confirmación con campo de texto
+    final secondConfirmation = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final confirmController = TextEditingController();
+        return AlertDialog(
+          title: const Text('Confirmación Final'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Para confirmar, escribe: ELIMINAR'),
+              const SizedBox(height: 16),
+              TextField(
+                controller: confirmController,
+                decoration: const InputDecoration(
+                  labelText: 'Escribe ELIMINAR',
+                  border: OutlineInputBorder(),
+                ),
+                textCapitalization: TextCapitalization.characters,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                if (confirmController.text.toUpperCase() == 'ELIMINAR') {
+                  Navigator.of(context).pop(true);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Debes escribir ELIMINAR para confirmar')),
+                  );
+                }
+              },
+              child: const Text('Eliminar Cuenta'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (secondConfirmation != true || !context.mounted) return;
+
+    // Mostrar diálogo de carga
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Eliminando cuenta...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final authService = ref.read(authServiceProvider);
+      final firestoreService = ref.read(firestoreServiceProvider);
+
+      // Primero intentar eliminar la cuenta directamente
+      try {
+        // Eliminar datos de Firestore primero
+        await firestoreService.deleteUserData(user.uid);
+        
+        // Luego eliminar la cuenta de Auth
+        await authService.deleteAccount();
+
+        if (context.mounted) {
+          Navigator.of(context).pop(); // Cerrar diálogo de carga
+          
+          // Mostrar mensaje de éxito
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Cuenta eliminada exitosamente'),
+              backgroundColor: Colors.green,
+            ),
+          );
+
+          // Redirigir a login
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            AppRouter.login,
+            (route) => false,
+          );
+        }
+      } on FirebaseAuthException catch (e) {
+        if (e.code == 'requires-recent-login') {
+          // Necesita reautenticación
+          if (context.mounted) {
+            Navigator.of(context).pop(); // Cerrar diálogo de carga
+            await _reauthenticateAndDelete(context, ref, user);
+          }
+        } else {
+          rethrow;
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context).pop(); // Cerrar diálogo de carga
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _reauthenticateAndDelete(BuildContext context, WidgetRef ref, User user) async {
+    final isGoogleUser = _isGoogleLinked(user);
+    
+    if (isGoogleUser) {
+      // Reautenticar con Google
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Reautenticación Requerida'),
+            content: const Text(
+              'Por seguridad, necesitas volver a iniciar sesión con Google antes de eliminar tu cuenta.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Continuar'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (confirmed != true || !context.mounted) return;
+
+      try {
+        // Mostrar loading
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Reautenticando...'),
+              ],
+            ),
+          ),
+        );
+
+        await ref.read(authServiceProvider).reauthenticateWithGoogle();
+        
+        if (context.mounted) {
+          Navigator.of(context).pop(); // Cerrar loading
+          
+          // Ahora intentar eliminar de nuevo
+          await _proceedWithDeletion(context, ref, user);
+        }
+      } catch (e) {
+        if (context.mounted) {
+          Navigator.of(context).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error reautenticando: ${e.toString()}')),
+          );
+        }
+      }
+    } else {
+      // Reautenticar con contraseña
+      final passwordController = TextEditingController();
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Reautenticación Requerida'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Por seguridad, ingresa tu contraseña para continuar:',
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: passwordController,
+                  decoration: const InputDecoration(
+                    labelText: 'Contraseña',
+                    border: OutlineInputBorder(),
+                  ),
+                  obscureText: true,
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Confirmar'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (confirmed != true || !context.mounted) return;
+
+      try {
+        // Mostrar loading
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Reautenticando...'),
+              ],
+            ),
+          ),
+        );
+
+        await ref.read(authServiceProvider).reauthenticateWithPassword(
+          passwordController.text,
+        );
+        
+        if (context.mounted) {
+          Navigator.of(context).pop(); // Cerrar loading
+          
+          // Ahora intentar eliminar de nuevo
+          await _proceedWithDeletion(context, ref, user);
+        }
+      } catch (e) {
+        if (context.mounted) {
+          Navigator.of(context).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Contraseña incorrecta')),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _proceedWithDeletion(BuildContext context, WidgetRef ref, User user) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Eliminando cuenta...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final authService = ref.read(authServiceProvider);
+      final firestoreService = ref.read(firestoreServiceProvider);
+
+      // Eliminar datos de Firestore
+      await firestoreService.deleteUserData(user.uid);
+      
+      // Eliminar cuenta de Auth
+      await authService.deleteAccount();
+
+      if (context.mounted) {
+        Navigator.of(context).pop(); // Cerrar loading
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Cuenta eliminada exitosamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          AppRouter.login,
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }

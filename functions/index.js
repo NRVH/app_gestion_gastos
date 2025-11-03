@@ -8,10 +8,15 @@ exports.onContributionCreated = functions.firestore
   .document('households/{householdId}/contributions/{contributionId}')
   .onCreate(async (snap, context) => {
     try {
+      console.log('🔔 [Contribution] Trigger iniciado');
       const contribution = snap.data();
       const householdId = context.params.householdId;
+      console.log('🔔 [Contribution] householdId:', householdId);
+      console.log('🔔 [Contribution] contributionId:', context.params.contributionId);
+      console.log('🔔 [Contribution] Datos:', JSON.stringify(contribution));
 
       // Get household members
+      console.log('🔔 [Contribution] Obteniendo miembros del household...');
       const membersSnapshot = await admin
         .firestore()
         .collection('households')
@@ -19,17 +24,30 @@ exports.onContributionCreated = functions.firestore
         .collection('members')
         .get();
 
+      console.log('🔔 [Contribution] Total de miembros:', membersSnapshot.size);
+
       // Get all FCM tokens except the contributor
       const tokens = [];
       membersSnapshot.forEach((doc) => {
         const member = doc.data();
+        console.log('🔔 [Contribution] Miembro:', member.displayName, 'UID:', member.uid);
+        console.log('🔔 [Contribution] FCM Tokens:', member.fcmTokens);
+        
         if (member.uid !== contribution.by && member.fcmTokens) {
+          console.log('🔔 [Contribution] Agregando tokens de:', member.displayName);
           tokens.push(...member.fcmTokens);
+        } else if (member.uid === contribution.by) {
+          console.log('🔔 [Contribution] Saltando contribuidor:', member.displayName);
+        } else {
+          console.log('⚠️ [Contribution] Miembro sin tokens:', member.displayName);
         }
       });
 
+      console.log('🔔 [Contribution] Total de tokens recopilados:', tokens.length);
+      console.log('🔔 [Contribution] Tokens:', JSON.stringify(tokens));
+
       if (tokens.length === 0) {
-        console.log('No tokens to send notifications to');
+        console.log('⚠️ [Contribution] No hay tokens para enviar notificaciones');
         return null;
       }
 
@@ -54,11 +72,34 @@ exports.onContributionCreated = functions.firestore
         tokens: tokens,
       };
 
-      const response = await admin.messaging().sendMulticast(message);
-      console.log('Successfully sent contribution notification:', response);
-      return response;
+      console.log('🔔 [Contribution] Enviando notificaciones a', tokens.length, 'tokens...');
+      
+      // Enviar notificación a cada token individualmente (más confiable)
+      const sendPromises = tokens.map(token => {
+        return admin.messaging().send({
+          notification: message.notification,
+          data: message.data,
+          token: token,
+        }).then(() => {
+          console.log('✅ [Contribution] Notificación enviada a token:', token.substring(0, 20) + '...');
+          return { success: true };
+        }).catch((error) => {
+          console.error('❌ [Contribution] Error enviando a token:', token.substring(0, 20) + '...', error.message);
+          return { success: false, error };
+        });
+      });
+      
+      const results = await Promise.all(sendPromises);
+      const successCount = results.filter(r => r.success).length;
+      const failureCount = results.filter(r => !r.success).length;
+      
+      console.log('✅ [Contribution] Total éxitos:', successCount);
+      console.log('❌ [Contribution] Total fallos:', failureCount);
+      
+      return { successCount, failureCount };
     } catch (error) {
-      console.error('Error sending contribution notification:', error);
+      console.error('❌ [Contribution] Error general:', error);
+      console.error('❌ [Contribution] Stack:', error.stack);
       return null;
     }
   });
@@ -68,10 +109,15 @@ exports.onExpenseCreated = functions.firestore
   .document('households/{householdId}/expenses/{expenseId}')
   .onCreate(async (snap, context) => {
     try {
+      console.log('🔔 [Expense] Trigger iniciado');
       const expense = snap.data();
       const householdId = context.params.householdId;
+      console.log('🔔 [Expense] householdId:', householdId);
+      console.log('🔔 [Expense] expenseId:', context.params.expenseId);
+      console.log('🔔 [Expense] Datos:', JSON.stringify(expense));
 
       // Get household members
+      console.log('🔔 [Expense] Obteniendo miembros del household...');
       const membersSnapshot = await admin
         .firestore()
         .collection('households')
@@ -79,17 +125,30 @@ exports.onExpenseCreated = functions.firestore
         .collection('members')
         .get();
 
+      console.log('🔔 [Expense] Total de miembros:', membersSnapshot.size);
+
       // Get all FCM tokens except the spender
       const tokens = [];
       membersSnapshot.forEach((doc) => {
         const member = doc.data();
+        console.log('🔔 [Expense] Miembro:', member.displayName, 'UID:', member.uid);
+        console.log('🔔 [Expense] FCM Tokens:', member.fcmTokens);
+        
         if (member.uid !== expense.by && member.fcmTokens) {
+          console.log('🔔 [Expense] Agregando tokens de:', member.displayName);
           tokens.push(...member.fcmTokens);
+        } else if (member.uid === expense.by) {
+          console.log('🔔 [Expense] Saltando quien gastó:', member.displayName);
+        } else {
+          console.log('⚠️ [Expense] Miembro sin tokens:', member.displayName);
         }
       });
 
+      console.log('🔔 [Expense] Total de tokens recopilados:', tokens.length);
+      console.log('🔔 [Expense] Tokens:', JSON.stringify(tokens));
+
       if (tokens.length === 0) {
-        console.log('No tokens to send notifications to');
+        console.log('⚠️ [Expense] No hay tokens para enviar notificaciones');
         return null;
       }
 
@@ -115,11 +174,34 @@ exports.onExpenseCreated = functions.firestore
         tokens: tokens,
       };
 
-      const response = await admin.messaging().sendMulticast(message);
-      console.log('Successfully sent expense notification:', response);
-      return response;
+      console.log('🔔 [Expense] Enviando notificaciones a', tokens.length, 'tokens...');
+      
+      // Enviar notificación a cada token individualmente (más confiable)
+      const sendPromises = tokens.map(token => {
+        return admin.messaging().send({
+          notification: message.notification,
+          data: message.data,
+          token: token,
+        }).then(() => {
+          console.log('✅ [Expense] Notificación enviada a token:', token.substring(0, 20) + '...');
+          return { success: true };
+        }).catch((error) => {
+          console.error('❌ [Expense] Error enviando a token:', token.substring(0, 20) + '...', error.message);
+          return { success: false, error };
+        });
+      });
+      
+      const results = await Promise.all(sendPromises);
+      const successCount = results.filter(r => r.success).length;
+      const failureCount = results.filter(r => !r.success).length;
+      
+      console.log('✅ [Expense] Total éxitos:', successCount);
+      console.log('❌ [Expense] Total fallos:', failureCount);
+      
+      return { successCount, failureCount };
     } catch (error) {
-      console.error('Error sending expense notification:', error);
+      console.error('❌ [Expense] Error general:', error);
+      console.error('❌ [Expense] Stack:', error.stack);
       return null;
     }
   });
@@ -181,9 +263,24 @@ exports.sendMonthClosureNotification = functions.https.onCall(
         tokens: tokens,
       };
 
-      const response = await admin.messaging().sendMulticast(message);
-      console.log('Successfully sent month closure notification:', response);
-      return { success: true, sentCount: response.successCount };
+      // Enviar notificación a cada token individualmente
+      const sendPromises = tokens.map(token => {
+        return admin.messaging().send({
+          notification: message.notification,
+          data: message.data,
+          token: token,
+        }).then(() => ({ success: true }))
+          .catch((error) => {
+            console.error('Error sending to token:', error.message);
+            return { success: false, error };
+          });
+      });
+      
+      const results = await Promise.all(sendPromises);
+      const successCount = results.filter(r => r.success).length;
+      
+      console.log('Successfully sent month closure notification. Success:', successCount);
+      return { success: true, sentCount: successCount };
     } catch (error) {
       console.error('Error sending month closure notification:', error);
       throw new functions.https.HttpsError('internal', error.message);

@@ -21,40 +21,55 @@ class _SplashPageState extends ConsumerState<SplashPage> {
   }
 
   Future<void> _checkAuth() async {
-    await Future.delayed(const Duration(seconds: 2));
+    // Esperar a que Firebase Auth se inicialice
+    await Future.delayed(const Duration(milliseconds: 500));
     
     if (!mounted) return;
     
-    final user = ref.read(currentUserProvider);
+    // Esperar al estado de autenticación
+    final authState = await ref.read(authStateProvider.future);
     
-    if (user == null) {
+    if (!mounted) return;
+    
+    if (authState == null) {
       Navigator.of(context).pushReplacementNamed(AppRouter.login);
       return;
     }
     
+    final user = authState;
+    
     // Inicializar servicio de notificaciones
     try {
+      print('🔔 [Splash] Iniciando servicio de notificaciones para user: ${user.uid}');
       final messagingService = ref.read(messagingServiceProvider);
       await messagingService.initialize();
+      print('🔔 [Splash] Servicio de notificaciones inicializado');
       
       // Obtener el token y guardarlo en Firestore
+      print('🔔 [Splash] Solicitando FCM token...');
       final token = await messagingService.getToken();
       if (token != null) {
-        print('FCM Token obtenido: $token');
+        print('🔔 [Splash] FCM Token obtenido: $token');
         
         // Guardar token en Firestore para todos los households del usuario
         final firestoreService = ref.read(firestoreServiceProvider);
+        print('🔔 [Splash] Obteniendo households del usuario...');
         final households = await firestoreService.watchUserHouseholds(user.uid).first;
+        print('🔔 [Splash] Households encontrados: ${households.length}');
         
         for (final household in households) {
+          print('🔔 [Splash] Guardando token en household: ${household.id}');
           await firestoreService.updateFcmToken(household.id, user.uid, token);
-          print('Token guardado en household: ${household.id}');
+          print('🔔 [Splash] ✅ Token guardado exitosamente en household: ${household.id}');
         }
+      } else {
+        print('⚠️ [Splash] No se pudo obtener el FCM token');
+        print('⚠️ [Splash] El usuario pudo haber denegado los permisos de notificación');
       }
       
       // Listener para actualizar token cuando se refresque
       messagingService.onTokenRefresh.listen((newToken) async {
-        print('Token refrescado: $newToken');
+        print('🔔 [Splash] Token refrescado: $newToken');
         final firestoreService = ref.read(firestoreServiceProvider);
         final households = await firestoreService.watchUserHouseholds(user.uid).first;
         
@@ -62,8 +77,35 @@ class _SplashPageState extends ConsumerState<SplashPage> {
           await firestoreService.updateFcmToken(household.id, user.uid, newToken);
         }
       });
+      
+      // Escuchar mensajes cuando la app está en foreground
+      messagingService.onMessage.listen((message) {
+        print('🔔 [Foreground] Mensaje recibido: ${message.notification?.title}');
+        print('🔔 [Foreground] Body: ${message.notification?.body}');
+        print('🔔 [Foreground] Data: ${message.data}');
+        
+        // Mostrar notificación local o snackbar
+        // TODO: Implementar notificación local si se requiere
+      });
+      
+      // Escuchar cuando el usuario toca una notificación
+      messagingService.onMessageOpenedApp.listen((message) {
+        print('🔔 [Tapped] Usuario tocó notificación: ${message.notification?.title}');
+        print('🔔 [Tapped] Data: ${message.data}');
+        
+        // TODO: Navegar a la pantalla correspondiente según message.data['type']
+      });
+      
+      // Verificar si la app se abrió desde una notificación
+      final initialMessage = await messagingService.getInitialMessage();
+      if (initialMessage != null) {
+        print('🔔 [Initial] App abierta desde notificación: ${initialMessage.notification?.title}');
+        print('🔔 [Initial] Data: ${initialMessage.data}');
+        
+        // TODO: Navegar a la pantalla correspondiente
+      }
     } catch (e) {
-      print('Error al inicializar notificaciones: $e');
+      print('❌ [Splash] Error al inicializar notificaciones: $e');
       // No bloqueamos la app si falla el servicio de notificaciones
     }
     
@@ -74,15 +116,31 @@ class _SplashPageState extends ConsumerState<SplashPage> {
       if (!mounted) return;
       
       if (households.isEmpty) {
+        print('🏠 [Splash] Usuario no tiene households, redirigiendo a crear/unir');
         Navigator.of(context).pushReplacementNamed(AppRouter.createHousehold);
       } else {
-        // Set the first household as current
-        ref.read(currentHouseholdIdProvider.notifier).state = households.first.id;
+        print('🏠 [Splash] Usuario tiene ${households.length} household(s)');
+        
+        // Verificar si ya hay un household seleccionado guardado
+        final savedHouseholdId = ref.read(currentHouseholdIdProvider);
+        print('🏠 [Splash] Household guardado en SharedPreferences: $savedHouseholdId');
+        
+        // Si existe un household guardado y el usuario sigue siendo miembro, mantenerlo
+        if (savedHouseholdId != null && 
+            households.any((h) => h.id == savedHouseholdId)) {
+          print('🏠 [Splash] Manteniendo household guardado: $savedHouseholdId');
+          // No es necesario setHouseholdId, ya está en SharedPreferences
+        } else {
+          // Si no hay household guardado o ya no es miembro, seleccionar el primero
+          print('🏠 [Splash] Seleccionando primer household: ${households.first.id}');
+          await ref.read(currentHouseholdIdProvider.notifier).setHouseholdId(households.first.id);
+        }
+        
         Navigator.of(context).pushReplacementNamed(AppRouter.home);
       }
     } catch (e) {
       // Si hay error al obtener households (ej: permisos), redirigir a crear/unirse
-      print('Error al verificar households: $e');
+      print('❌ [Splash] Error al verificar households: $e');
       if (!mounted) return;
       Navigator.of(context).pushReplacementNamed(AppRouter.createHousehold);
     }

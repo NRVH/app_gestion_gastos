@@ -45,7 +45,7 @@ class _CreateHouseholdPageState extends ConsumerState<CreateHouseholdPage> {
 
       if (!mounted) return;
 
-      ref.read(currentHouseholdIdProvider.notifier).state = householdId;
+      await ref.read(currentHouseholdIdProvider.notifier).setHouseholdId(householdId);
       
       // Mostrar diálogo de bienvenida
       _showWelcomeDialog(context);
@@ -78,9 +78,9 @@ class _CreateHouseholdPageState extends ConsumerState<CreateHouseholdPage> {
           ElevatedButton(
             onPressed: () {
               Navigator.of(context).pop();
-              Navigator.of(context).pushReplacementNamed(AppRouter.manageCategories);
+              Navigator.of(context).pushReplacementNamed(AppRouter.home);
             },
-            child: const Text('Agregar categorías'),
+            child: const Text('Ir al inicio'),
           ),
         ],
       ),

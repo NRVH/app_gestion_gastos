@@ -17,6 +17,8 @@ class MessagingService {
   MessagingService(this._messaging);
 
   Future<void> initialize() async {
+    print('🔔 [MessagingService] Solicitando permisos de notificación...');
+    
     // Request permission
     final settings = await _messaging.requestPermission(
       alert: true,
@@ -28,15 +30,28 @@ class MessagingService {
       sound: true,
     );
 
-    print('User granted permission: ${settings.authorizationStatus}');
+    print('🔔 [MessagingService] Estado de permisos: ${settings.authorizationStatus}');
+    
+    if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+      print('🔔 [MessagingService] ✅ Permisos autorizados');
+    } else if (settings.authorizationStatus == AuthorizationStatus.provisional) {
+      print('🔔 [MessagingService] ⚠️ Permisos provisionales');
+    } else {
+      print('🔔 [MessagingService] ❌ Permisos denegados o no determinados');
+    }
 
     // Get FCM token
+    print('🔔 [MessagingService] Obteniendo FCM token...');
     final token = await _messaging.getToken();
-    print('FCM Token: $token');
+    if (token != null) {
+      print('🔔 [MessagingService] ✅ FCM Token obtenido: ${token.substring(0, 20)}...');
+    } else {
+      print('🔔 [MessagingService] ❌ No se pudo obtener FCM token');
+    }
 
     // Listen to token refresh
     _messaging.onTokenRefresh.listen((newToken) {
-      print('FCM Token refreshed: $newToken');
+      print('🔔 [MessagingService] Token refrescado: ${newToken.substring(0, 20)}...');
       // TODO: Update token in Firestore
     });
   }

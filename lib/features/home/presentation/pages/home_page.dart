@@ -6,14 +6,166 @@ import '../../../../core/providers/household_provider.dart';
 import '../../../../core/providers/member_provider.dart';
 import '../../../../core/providers/category_provider.dart';
 import '../../../../core/services/firestore_service.dart';
+import '../../../../core/models/member.dart';
 import '../widgets/month_summary_card.dart';
 import '../widgets/personal_summary_card.dart';
 import '../widgets/category_list_card.dart';
 
-class HomePage extends ConsumerWidget {
+class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
 
-  Future<void> _showInviteCodeDialog(BuildContext context, WidgetRef ref, String householdId) async {
+  @override
+  ConsumerState<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends ConsumerState<HomePage> {
+  @override
+  void initState() {
+    super.initState();
+    
+    // Escuchar cambios en el household y miembro actual
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _setupListeners();
+    });
+  }
+
+  void _setupListeners() {
+    // Listener para detectar si el household fue eliminado o el usuario expulsado
+    ref.listen(currentHouseholdProvider, (previous, next) {
+      next.whenData((household) {
+        if (household == null && mounted) {
+          print('🏠 [HomePage] Household eliminado o usuario expulsado, redirigiendo...');
+          _redirectToCreateOrJoin();
+        }
+      });
+    });
+
+    // Listener adicional para verificar membresía
+    ref.listen(currentMemberProvider, (previous, next) {
+      next.whenData((member) {
+        if (member == null && mounted) {
+          print('👤 [HomePage] Usuario ya no es miembro, redirigiendo...');
+          _redirectToCreateOrJoin();
+        }
+      });
+    });
+  }
+
+  void _redirectToCreateOrJoin() {
+    // Limpiar el household ID guardado
+    ref.read(currentHouseholdIdProvider.notifier).clear();
+    
+    // Redirigir a la pantalla de crear/unirse
+    if (mounted) {
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        AppRouter.createHousehold,
+        (route) => false, // Eliminar toda la pila de navegación
+      );
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ya no eres miembro de este hogar'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
+  Future<void> _showCloseMonthDialog(BuildContext context) async {
+    final householdAsync = ref.read(currentHouseholdProvider);
+    final household = householdAsync.value;
+    
+    if (household == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cerrar mes'),
+        content: const Text(
+          '¿Estás seguro de cerrar el mes actual?\n\n'
+          '• Se guardarán los sobrantes/déficits de cada categoría\n'
+          '• Se reiniciarán los gastos y aportaciones del mes\n'
+          '• Esta acción no se puede deshacer',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+            child: const Text('Cerrar mes'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      // Mostrar loading
+      if (!context.mounted) return;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Cerrando mes...'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final membersAsync = await ref.read(householdMembersProvider.future);
+      final categoriesAsync = await ref.read(categoriesProvider.future);
+
+      await ref.read(firestoreServiceProvider).closeMonth(
+            householdId: household.id,
+            household: household,
+            members: membersAsync,
+            categories: categoriesAsync,
+          );
+
+      // Cerrar loading
+      if (!context.mounted) return;
+      Navigator.pop(context);
+
+      // Refrescar datos
+      ref.invalidate(currentHouseholdProvider);
+      ref.invalidate(categoriesProvider);
+      ref.invalidate(householdMembersProvider);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Mes cerrado exitosamente'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      // Cerrar loading si está abierto
+      if (context.mounted) Navigator.pop(context);
+      
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al cerrar mes: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _showInviteCodeDialog(BuildContext context, String householdId) async {
     // Generar código
     String? inviteCode;
     try {
@@ -106,9 +258,16 @@ class HomePage extends ConsumerWidget {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.calendar_month),
+            onPressed: householdId != null
+                ? () => _showCloseMonthDialog(context)
+                : null,
+            tooltip: 'Cerrar mes',
+          ),
+          IconButton(
             icon: const Icon(Icons.share),
             onPressed: householdId != null
-                ? () => _showInviteCodeDialog(context, ref, householdId)
+                ? () => _showInviteCodeDialog(context, householdId)
                 : null,
             tooltip: 'Compartir código de invitación',
           ),

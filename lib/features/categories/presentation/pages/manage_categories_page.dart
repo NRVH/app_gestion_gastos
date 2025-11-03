@@ -3,15 +3,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/services/firestore_service.dart';
 import '../../../../core/providers/household_provider.dart';
 import '../../../../core/providers/category_provider.dart';
+import '../../../../core/providers/member_provider.dart';
 import '../../../../core/models/category.dart';
+import '../../../../core/models/member.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../core/utils/formatters.dart';
 
-class ManageCategoriesPage extends ConsumerWidget {
+class ManageCategoriesPage extends ConsumerStatefulWidget {
   const ManageCategoriesPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ManageCategoriesPage> createState() => _ManageCategoriesPageState();
+}
+
+class _ManageCategoriesPageState extends ConsumerState<ManageCategoriesPage> {
+  @override
+  Widget build(BuildContext context) {
     final categoriesAsync = ref.watch(categoriesProvider);
 
     return Scaffold(
@@ -45,6 +52,13 @@ class ManageCategoriesPage extends ConsumerWidget {
             );
           }
 
+          // Verificar si debemos mostrar el botón de invitación
+          final membersAsync = ref.watch(householdMembersProvider);
+          final currentMemberAsync = ref.watch(currentMemberProvider);
+          final showInviteButton = membersAsync.value != null &&
+              currentMemberAsync.value?.role == MemberRole.owner &&
+              membersAsync.value!.length == 1;
+
           return Column(
             children: [
               Expanded(
@@ -56,7 +70,7 @@ class ManageCategoriesPage extends ConsumerWidget {
                     return Card(
                       margin: const EdgeInsets.only(bottom: 12),
                       child: ListTile(
-                        onTap: () => _showEditCategoryDialog(context, ref, category),
+                        onTap: () => _showEditCategoryDialog(context, category),
                         leading: category.icon != null
                             ? Text(category.icon!, style: const TextStyle(fontSize: 32))
                             : const Icon(Icons.label_outline, size: 32),
@@ -81,11 +95,11 @@ class ManageCategoriesPage extends ConsumerWidget {
                           children: [
                             IconButton(
                               icon: const Icon(Icons.edit, color: Colors.blue),
-                              onPressed: () => _showEditCategoryDialog(context, ref, category),
+                              onPressed: () => _showEditCategoryDialog(context, category),
                             ),
                             IconButton(
                               icon: const Icon(Icons.delete, color: Colors.red),
-                              onPressed: () => _deleteCategory(context, ref, category.id, category.name),
+                              onPressed: () => _deleteCategory(context, category.id, category.name),
                             ),
                           ],
                         ),
@@ -95,31 +109,33 @@ class ManageCategoriesPage extends ConsumerWidget {
                   },
                 ),
               ),
-              // Botón continuar - solo visible cuando hay categorías
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).scaffoldBackgroundColor,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 8,
-                      offset: const Offset(0, -2),
-                    ),
-                  ],
-                ),
-                child: SafeArea(
-                  top: false,
-                  child: ElevatedButton.icon(
-                    onPressed: () => _showInviteDialog(context, ref),
-                    icon: const Icon(Icons.arrow_forward),
-                    label: const Text('Continuar - Invitar pareja'),
-                    style: ElevatedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
+
+              // Bottom action button - solo mostrar si es owner y está solo
+              if (showInviteButton)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, -2),
+                      ),
+                    ],
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _showInviteDialog(context),
+                      icon: const Icon(Icons.arrow_forward),
+                      label: const Text('Continuar - Invitar pareja'),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                      ),
                     ),
                   ),
                 ),
-              ),
             ],
           );
         },
@@ -127,13 +143,13 @@ class ManageCategoriesPage extends ConsumerWidget {
         error: (error, _) => Center(child: Text('Error: $error')),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddCategoryDialog(context, ref),
+        onPressed: () => _showAddCategoryDialog(context),
         child: const Icon(Icons.add),
       ),
     );
   }
 
-  Future<void> _showInviteDialog(BuildContext context, WidgetRef ref) async {
+  Future<void> _showInviteDialog(BuildContext context) async {
     final householdId = ref.read(currentHouseholdIdProvider);
     if (householdId == null) return;
 
@@ -210,7 +226,7 @@ class ManageCategoriesPage extends ConsumerWidget {
     }
   }
 
-  Future<void> _showAddCategoryDialog(BuildContext context, WidgetRef ref) async {
+  Future<void> _showAddCategoryDialog(BuildContext context) async {
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController();
     final limitController = TextEditingController();
@@ -303,7 +319,7 @@ class ManageCategoriesPage extends ConsumerWidget {
     );
   }
 
-  Future<void> _showEditCategoryDialog(BuildContext context, WidgetRef ref, Category category) async {
+  Future<void> _showEditCategoryDialog(BuildContext context, Category category) async {
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController(text: category.name);
     final limitController = TextEditingController(text: category.monthlyLimit.toString());
@@ -404,7 +420,6 @@ class ManageCategoriesPage extends ConsumerWidget {
 
   Future<void> _deleteCategory(
     BuildContext context,
-    WidgetRef ref,
     String categoryId,
     String categoryName,
   ) async {

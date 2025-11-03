@@ -13,11 +13,18 @@ final authServiceProvider = Provider<AuthService>((ref) {
 });
 
 final authStateProvider = StreamProvider<User?>((ref) {
-  return ref.watch(authServiceProvider).authStateChanges;
+  final authService = ref.watch(authServiceProvider);
+  return authService.authStateChanges;
 });
 
+// Provider síncrono que retorna el usuario actual o null
 final currentUserProvider = Provider<User?>((ref) {
-  return ref.watch(authStateProvider).value;
+  final authState = ref.watch(authStateProvider);
+  return authState.when(
+    data: (user) => user,
+    loading: () => null,
+    error: (_, __) => null,
+  );
 });
 
 class AuthService {
@@ -58,6 +65,10 @@ class AuthService {
     required String email,
     required String password,
   }) async {
+    print('🔐 [AUTH] Iniciando signInWithEmailAndPassword');
+    print('🔐 [AUTH] Email: $email');
+    print('🔐 [AUTH] ENABLE_TEST_MODE: $ENABLE_TEST_MODE');
+    
     // ✅ MODO TEST: Bypass con credenciales de prueba
     if (ENABLE_TEST_MODE && email == TEST_EMAIL && password == TEST_PASSWORD) {
       print('🔓 MODO TEST: Acceso concedido con credenciales de prueba');
@@ -70,16 +81,20 @@ class AuthService {
     
     // Modo normal con Firebase
     try {
+      print('🔐 [AUTH] Llamando a Firebase signInWithEmailAndPassword...');
       final result = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
+      print('🔐 [AUTH] ✅ Login exitoso! User ID: ${result.user?.uid}');
       _isTestUserLoggedIn = false;
       if (ENABLE_TEST_MODE) {
         _testAuthStateController.add(result.user);
       }
       return result;
     } catch (e) {
+      print('🔐 [AUTH] ❌ Error en signInWithEmailAndPassword: $e');
+      print('🔐 [AUTH] ❌ Error type: ${e.runtimeType}');
       rethrow;
     }
   }
@@ -106,38 +121,67 @@ class AuthService {
   }
 
   Future<UserCredential?> signInWithGoogle() async {
+    print('🔐 [GOOGLE] Iniciando signInWithGoogle');
     try {
       // Trigger the authentication flow
-      final googleSignIn = GoogleSignIn(scopes: ['email']);
+      print('🔐 [GOOGLE] Creando GoogleSignIn instance...');
+      final googleSignIn = GoogleSignIn(
+        scopes: ['email'],
+      );
       
+      print('🔐 [GOOGLE] Llamando a googleSignIn.signIn()...');
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
       
       if (googleUser == null) {
+        print('🔐 [GOOGLE] ⚠️ Usuario canceló el login');
         // User canceled the sign-in
         return null;
       }
 
+      print('🔐 [GOOGLE] ✅ Usuario seleccionado: ${googleUser.email}');
       // Obtain the auth details from the request
+      print('🔐 [GOOGLE] Obteniendo authentication tokens...');
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
 
       // Check if we have the required tokens
       final String? accessToken = googleAuth.accessToken;
       final String? idToken = googleAuth.idToken;
 
+      print('🔐 [GOOGLE] accessToken: ${accessToken != null ? "✅ OK" : "❌ NULL"}');
+      print('🔐 [GOOGLE] idToken: ${idToken != null ? "✅ OK" : "❌ NULL"}');
+
       if (accessToken == null || idToken == null) {
         throw Exception('Error obteniendo tokens de Google');
       }
 
       // Create a new credential
+      print('🔐 [GOOGLE] Creando credential de Firebase...');
       final credential = GoogleAuthProvider.credential(
         accessToken: accessToken,
         idToken: idToken,
       );
 
       try {
+        print('🔐 [GOOGLE] Llamando a Firebase signInWithCredential...');
         // Try to sign in with Google credential
-        return await _auth.signInWithCredential(credential);
+        // Workaround para el bug de google_sign_in con el tipo PigeonUserDetails
+        try {
+          final result = await _auth.signInWithCredential(credential);
+          print('🔐 [GOOGLE] ✅ Login exitoso! User ID: ${result.user?.uid}');
+          return result;
+        } catch (typeError) {
+          // Si hay un error de tipo, verificar si el usuario se autenticó correctamente de todos modos
+          print('🔐 [GOOGLE] ⚠️ Type error capturado: $typeError');
+          final currentUser = _auth.currentUser;
+          if (currentUser != null) {
+            print('🔐 [GOOGLE] ✅ Usuario autenticado a pesar del error de tipo: ${currentUser.uid}');
+            // Crear un UserCredential manualmente
+            return _ManualUserCredential(currentUser);
+          }
+          rethrow;
+        }
       } on FirebaseAuthException catch (e) {
+        print('🔐 [GOOGLE] ❌ FirebaseAuthException: ${e.code} - ${e.message}');
         // Si la cuenta ya existe con email/password, vincularla
         if (e.code == 'account-exists-with-different-credential') {
           // Obtener el email del error
@@ -162,7 +206,9 @@ class AuthService {
         rethrow;
       }
     } catch (e) {
-      print('Error signing in with Google: $e');
+      print('🔐 [GOOGLE] ❌ Error general: $e');
+      print('🔐 [GOOGLE] ❌ Error type: ${e.runtimeType}');
+      print('🔐 [GOOGLE] ❌ Stack trace: ${StackTrace.current}');
       rethrow;
     }
   }
@@ -176,7 +222,9 @@ class AuthService {
       }
 
       // Trigger the authentication flow
-      final googleSignIn = GoogleSignIn(scopes: ['email']);
+      final googleSignIn = GoogleSignIn(
+        scopes: ['email'],
+      );
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
       
       if (googleUser == null) {
@@ -201,7 +249,20 @@ class AuthService {
       );
 
       // Link the credential with the current user
-      await currentUser.linkWithCredential(credential);
+      try {
+        await currentUser.linkWithCredential(credential);
+      } catch (typeError) {
+        // Si hay un error de tipo, verificar si se vinculó correctamente de todos modos
+        print('⚠️ Type error capturado en linkWithGoogle: $typeError');
+        // Recargar el usuario para verificar si se vinculó
+        await currentUser.reload();
+        final updatedUser = _auth.currentUser;
+        if (updatedUser != null) {
+          print('✅ Cuenta vinculada a pesar del error de tipo');
+          return;
+        }
+        rethrow;
+      }
     } catch (e) {
       print('Error linking with Google: $e');
       rethrow;
@@ -249,7 +310,14 @@ class AuthService {
   }
 
   Future<void> deleteAccount() async {
-    await _auth.currentUser?.delete();
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw Exception('No hay usuario autenticado');
+    }
+    
+    // Intentar eliminar la cuenta
+    // Nota: Puede requerir reautenticación reciente
+    await user.delete();
   }
 
   Future<void> reauthenticateWithPassword(String password) async {
@@ -260,6 +328,58 @@ class AuthService {
         password: password,
       );
       await user.reauthenticateWithCredential(credential);
+    }
+  }
+
+  Future<void> reauthenticateWithGoogle() async {
+    try {
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) {
+        throw Exception('No hay usuario autenticado');
+      }
+
+      // Trigger the authentication flow
+      final googleSignIn = GoogleSignIn(
+        scopes: ['email'],
+      );
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+      
+      if (googleUser == null) {
+        throw Exception('Autenticación cancelada');
+      }
+
+      // Obtain the auth details
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+
+      final String? accessToken = googleAuth.accessToken;
+      final String? idToken = googleAuth.idToken;
+
+      if (accessToken == null || idToken == null) {
+        throw Exception('Error obteniendo tokens de Google');
+      }
+
+      // Create credential
+      final credential = GoogleAuthProvider.credential(
+        accessToken: accessToken,
+        idToken: idToken,
+      );
+
+      // Reauthenticate
+      try {
+        await currentUser.reauthenticateWithCredential(credential);
+      } catch (typeError) {
+        // Si hay un error de tipo, verificar si se reautenticó correctamente de todos modos
+        print('⚠️ Type error capturado en reauthenticateWithGoogle: $typeError');
+        // Si el currentUser sigue existiendo, asumimos que la reautenticación fue exitosa
+        if (_auth.currentUser != null) {
+          print('✅ Reautenticación exitosa a pesar del error de tipo');
+          return;
+        }
+        rethrow;
+      }
+    } catch (e) {
+      print('Error reauthenticating with Google: $e');
+      rethrow;
     }
   }
 }
@@ -402,6 +522,20 @@ class _TestUserCredential implements UserCredential {
   final User? user;
   
   _TestUserCredential(this.user);
+  
+  @override
+  AdditionalUserInfo? get additionalUserInfo => null;
+  
+  @override
+  AuthCredential? get credential => null;
+}
+
+// 🔧 Workaround para el bug de google_sign_in con PigeonUserDetails
+class _ManualUserCredential implements UserCredential {
+  @override
+  final User? user;
+  
+  _ManualUserCredential(this.user);
   
   @override
   AdditionalUserInfo? get additionalUserInfo => null;

@@ -2,53 +2,47 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper functions
+    // Helper function: Solo verificar que el usuario esté autenticado
     function isAuthenticated() {
       return request.auth != null;
     }
     
-    function isHouseholdMember(householdId) {
-      return isAuthenticated() && 
-             exists(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid));
-    }
+    // Reglas simplificadas para uso personal (sin restricciones)
+    // Cualquier usuario autenticado tiene acceso total
     
     // Households collection
     match /households/{householdId} {
-      // Permitir leer si estás autenticado (para buscar tus households y por código)
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isHouseholdMember(householdId);
-      allow delete: if isHouseholdMember(householdId);
+      // Permisos totales para cualquier usuario autenticado
+      allow read, write: if isAuthenticated();
       
       // Members subcollection
       match /members/{memberId} {
-        // Permitir leer si estás autenticado (para ver miembros del household)
-        allow read: if isAuthenticated();
-        // Permitir crear miembro si eres tú mismo
-        allow create: if isAuthenticated() && request.auth.uid == memberId;
-        allow update: if isAuthenticated() && request.auth.uid == memberId;
-        allow delete: if isHouseholdMember(householdId);
+        // Permisos totales para cualquier usuario autenticado
+        allow read, write: if isAuthenticated();
       }
       
       // Categories subcollection
       match /categories/{categoryId} {
-        allow read, write: if isHouseholdMember(householdId);
+        // Permisos totales para cualquier usuario autenticado
+        allow read, write: if isAuthenticated();
       }
       
       // Expenses subcollection
       match /expenses/{expenseId} {
-        allow read, write: if isHouseholdMember(householdId);
+        // Permisos totales para cualquier usuario autenticado
+        allow read, write: if isAuthenticated();
       }
       
       // Contributions subcollection
       match /contributions/{contributionId} {
-        allow read, write: if isHouseholdMember(householdId);
+        // Permisos totales para cualquier usuario autenticado
+        allow read, write: if isAuthenticated();
       }
       
       // Month history subcollection
       match /months/{monthId} {
-        allow read: if isHouseholdMember(householdId);
-        allow write: if isHouseholdMember(householdId);
+        // Permisos totales para cualquier usuario autenticado
+        allow read, write: if isAuthenticated();
       }
     }
   }

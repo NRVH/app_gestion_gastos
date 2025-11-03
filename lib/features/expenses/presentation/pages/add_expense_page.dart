@@ -4,6 +4,7 @@ import '../../../../core/services/firestore_service.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/providers/household_provider.dart';
 import '../../../../core/providers/category_provider.dart';
+import '../../../../core/providers/expense_provider.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../core/utils/formatters.dart';
 
@@ -50,6 +51,8 @@ class _AddExpensePageState extends ConsumerState<AddExpensePage> {
         throw Exception('Sesión inválida');
       }
 
+      print('💰 [AddExpense] Agregando gasto: ${double.parse(_amountController.text)} en categoría: ${category.name}');
+      
       await ref.read(firestoreServiceProvider).addExpense(
             householdId: householdId,
             byUid: user.uid,
@@ -61,7 +64,19 @@ class _AddExpensePageState extends ConsumerState<AddExpensePage> {
             note: _noteController.text.trim(),
           );
 
+      print('✅ [AddExpense] Gasto agregado exitosamente');
+
       if (!mounted) return;
+
+      // Esperar un momento para que Firestore termine de actualizar
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // Refrescar providers para forzar actualización inmediata
+      print('🔄 [AddExpense] Refrescando providers...');
+      ref.refresh(categoriesProvider);
+      ref.refresh(expensesProvider);
+      ref.refresh(currentHouseholdProvider);
+      print('✅ [AddExpense] Providers refrescados');
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Gasto registrado')),

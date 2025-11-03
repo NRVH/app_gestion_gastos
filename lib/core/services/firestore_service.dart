@@ -23,6 +23,28 @@ class FirestoreService {
 
   // ==================== HOUSEHOLD ====================
 
+  // Generar código de 6 dígitos único
+  Future<String> _generateUniqueCode() async {
+    int attempts = 0;
+    const maxAttempts = 10;
+    
+    while (attempts < maxAttempts) {
+      // Generar código de 6 dígitos (100000 a 999999)
+      final code = (100000 + (DateTime.now().microsecondsSinceEpoch % 900000)).toString();
+      
+      // Verificar si ya existe
+      final doc = await _firestore.collection('households').doc(code).get();
+      if (!doc.exists) {
+        return code;
+      }
+      
+      attempts++;
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+    
+    throw Exception('No se pudo generar un código único después de $maxAttempts intentos');
+  }
+
   Future<String> createHousehold({
     required String name,
     required String month,
@@ -31,9 +53,12 @@ class FirestoreService {
     required String ownerDisplayName,
     required double ownerShare,
   }) async {
-    final householdRef = _firestore.collection('households').doc();
+    // Generar código único de 6 dígitos
+    final code = await _generateUniqueCode();
+    final householdRef = _firestore.collection('households').doc(code);
+    
     final household = Household(
-      id: householdRef.id,
+      id: code,
       name: name,
       month: month,
       monthTarget: monthTarget,
@@ -58,7 +83,7 @@ class FirestoreService {
     );
 
     await batch.commit();
-    return householdRef.id;
+    return code;
   }
 
   Future<void> joinHousehold({
@@ -190,8 +215,37 @@ class FirestoreService {
         .collection('members')
         .snapshots()
         .map((snapshot) {
+      print('👥 [Firestore] Cargando ${snapshot.docs.length} miembros del household $householdId');
       return snapshot.docs
-          .map((doc) => Member.fromJson(doc.data()))
+          .map((doc) {
+            try {
+              final data = doc.data();
+              print('👤 [Firestore] Miembro ${doc.id}: role="${data['role']}", displayName="${data['displayName']}"');
+              
+              // Normalizar el campo 'role' si existe pero es inválido
+              if (data['role'] == null || 
+                  (data['role'] is String && 
+                   data['role'] != 'owner' && 
+                   data['role'] != 'partner')) {
+                print('⚠️ [Firestore] Miembro ${doc.id} tiene role inválido: "${data['role']}", usando "partner" por defecto');
+                data['role'] = 'partner'; // Valor por defecto
+              }
+              
+              final member = Member.fromJson(data);
+              print('✅ [Firestore] Miembro ${doc.id} deserializado correctamente: ${member.displayName} (${member.role})');
+              return member;
+            } catch (e, stackTrace) {
+              print('❌ [Firestore] Error al deserializar miembro ${doc.id}: $e');
+              print('❌ [Firestore] Stack trace: $stackTrace');
+              // Retornar un miembro por defecto en caso de error
+              return Member(
+                uid: doc.id,
+                displayName: 'Usuario ${doc.id.substring(0, 5)}',
+                role: MemberRole.partner,
+                share: 0.5,
+              );
+            }
+          })
           .toList();
     });
   }
@@ -213,7 +267,27 @@ class FirestoreService {
         .snapshots()
         .map((doc) {
       if (!doc.exists) return null;
-      return Member.fromJson(doc.data()!);
+      try {
+        final data = doc.data()!;
+        // Normalizar el campo 'role' si existe pero es inválido
+        if (data['role'] == null || 
+            (data['role'] is String && 
+             data['role'] != 'owner' && 
+             data['role'] != 'partner')) {
+          print('⚠️ [Firestore] Miembro ${doc.id} tiene role inválido: ${data['role']}, usando "partner" por defecto');
+          data['role'] = 'partner'; // Valor por defecto
+        }
+        return Member.fromJson(data);
+      } catch (e) {
+        print('❌ [Firestore] Error al deserializar miembro $uid: $e');
+        // Retornar un miembro por defecto en caso de error
+        return Member(
+          uid: uid,
+          displayName: 'Usuario $uid',
+          role: MemberRole.partner,
+          share: 0.5,
+        );
+      }
     });
   }
 
@@ -235,14 +309,43 @@ class FirestoreService {
     String uid,
     String token,
   ) async {
-    await _firestore
-        .collection('households')
-        .doc(householdId)
-        .collection('members')
-        .doc(uid)
-        .update({
-      'fcmTokens': FieldValue.arrayUnion([token]),
-    });
+    print('🔔 [FirestoreService] updateFcmToken llamado');
+    print('🔔 [FirestoreService] householdId: $householdId');
+    print('🔔 [FirestoreService] uid: $uid');
+    print('🔔 [FirestoreService] token: ${token.substring(0, 20)}...');
+    
+    try {
+      final memberRef = _firestore
+          .collection('households')
+          .doc(householdId)
+          .collection('members')
+          .doc(uid);
+      
+      // Verificar si el documento existe
+      final memberDoc = await memberRef.get();
+      if (!memberDoc.exists) {
+        print('❌ [FirestoreService] El miembro $uid NO EXISTE en household $householdId');
+        throw Exception('El miembro no existe');
+      }
+      
+      print('✅ [FirestoreService] Miembro existe, actualizando tokens...');
+      
+      await memberRef.update({
+        'fcmTokens': FieldValue.arrayUnion([token]),
+      });
+      
+      print('✅ [FirestoreService] Token guardado exitosamente');
+      
+      // Verificar que se guardó correctamente
+      final updatedDoc = await memberRef.get();
+      final tokens = updatedDoc.data()?['fcmTokens'] as List?;
+      print('🔔 [FirestoreService] Tokens actuales del miembro: ${tokens?.length ?? 0} tokens');
+      
+    } catch (e, stackTrace) {
+      print('❌ [FirestoreService] Error al guardar token: $e');
+      print('❌ [FirestoreService] Stack trace: $stackTrace');
+      rethrow;
+    }
   }
 
   /// Recalcula los porcentajes de aportación de todos los miembros
@@ -287,6 +390,34 @@ class FirestoreService {
     }
     
     await batch.commit();
+  }
+
+  /// Elimina un miembro de la casa
+  Future<void> removeMemberFromHousehold(String householdId, String uid) async {
+    final batch = _firestore.batch();
+
+    // Eliminar el documento del miembro
+    final memberRef = _firestore
+        .collection('households')
+        .doc(householdId)
+        .collection('members')
+        .doc(uid);
+    
+    batch.delete(memberRef);
+
+    // Actualizar la lista de miembros en el household
+    batch.update(
+      _firestore.collection('households').doc(householdId),
+      {
+        'members': FieldValue.arrayRemove([uid]),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+    );
+
+    await batch.commit();
+
+    // Recalcular porcentajes de los miembros restantes
+    await recalculateMemberShares(householdId);
   }
 
   // ==================== CATEGORIES ====================
@@ -436,17 +567,11 @@ class FirestoreService {
       },
     );
 
-    // Update category spentThisMonth
-    batch.update(
-      _firestore
-          .collection('households')
-          .doc(householdId)
-          .collection('categories')
-          .doc(categoryId),
-      {'spentThisMonth': FieldValue.increment(amount)},
-    );
-
     await batch.commit();
+    
+    // Recalcular gastos de todas las categorías para mantener consistencia
+    await recalculateCategorySpending(householdId);
+    
     return expenseRef.id;
   }
 
@@ -502,19 +627,12 @@ class FirestoreService {
           'updatedAt': FieldValue.serverTimestamp(),
         },
       );
-
-      // Update category spentThisMonth
-      batch.update(
-        _firestore
-            .collection('households')
-            .doc(householdId)
-            .collection('categories')
-            .doc(categoryId),
-        {'spentThisMonth': FieldValue.increment(amountDiff)},
-      );
     }
 
     await batch.commit();
+    
+    // Recalcular gastos de todas las categorías para mantener consistencia
+    await recalculateCategorySpending(householdId);
   }
 
   Future<void> deleteExpense(
@@ -543,17 +661,81 @@ class FirestoreService {
       },
     );
 
-    // Revert category spentThisMonth
+    await batch.commit();
+    
+    // Recalcular gastos de todas las categorías para mantener consistencia
+    await recalculateCategorySpending(householdId);
+  }
+
+  /// Recalcula el spentThisMonth de todas las categorías basándose en los gastos reales
+  Future<void> recalculateCategorySpending(String householdId) async {
+    print('🔄 [Firestore] Iniciando recalculateCategorySpending para household: $householdId');
+    
+    // Obtener todos los gastos
+    final expensesSnapshot = await _firestore
+        .collection('households')
+        .doc(householdId)
+        .collection('expenses')
+        .get();
+
+    print('📊 [Firestore] Total de gastos encontrados: ${expensesSnapshot.docs.length}');
+
+    // Calcular el total por categoría
+    final Map<String, double> categoryTotals = {};
+    
+    for (final expenseDoc in expensesSnapshot.docs) {
+      final data = expenseDoc.data();
+      final categoryId = data['categoryId'] as String?;
+      final amount = (data['amount'] as num?)?.toDouble() ?? 0.0;
+      
+      if (categoryId != null && categoryId.isNotEmpty) {
+        categoryTotals[categoryId] = (categoryTotals[categoryId] ?? 0.0) + amount;
+        print('💵 [Firestore] Categoría $categoryId: +\$${amount.toStringAsFixed(2)} = \$${categoryTotals[categoryId]!.toStringAsFixed(2)}');
+      }
+    }
+
+    print('📈 [Firestore] Totales calculados por categoría:');
+    categoryTotals.forEach((catId, total) {
+      print('   - $catId: \$${total.toStringAsFixed(2)}');
+    });
+
+    // Obtener todas las categorías
+    final categoriesSnapshot = await _firestore
+        .collection('households')
+        .doc(householdId)
+        .collection('categories')
+        .get();
+
+    print('📂 [Firestore] Total de categorías encontradas: ${categoriesSnapshot.docs.length}');
+
+    // Actualizar cada categoría con su total real
+    final batch = _firestore.batch();
+    
+    for (final categoryDoc in categoriesSnapshot.docs) {
+      final categoryId = categoryDoc.id;
+      final totalSpent = categoryTotals[categoryId] ?? 0.0;
+      final currentData = categoryDoc.data();
+      final currentSpent = (currentData['spentThisMonth'] as num?)?.toDouble() ?? 0.0;
+      
+      print('🔧 [Firestore] Actualizando categoría $categoryId: \$${currentSpent.toStringAsFixed(2)} -> \$${totalSpent.toStringAsFixed(2)}');
+      
+      batch.update(
+        categoryDoc.reference,
+        {
+          'spentThisMonth': totalSpent,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      );
+    }
+
+    // Actualizar el household para forzar refresh de streams
     batch.update(
-      _firestore
-          .collection('households')
-          .doc(householdId)
-          .collection('categories')
-          .doc(categoryId),
-      {'spentThisMonth': FieldValue.increment(-amount)},
+      _firestore.collection('households').doc(householdId),
+      {'updatedAt': FieldValue.serverTimestamp()},
     );
 
     await batch.commit();
+    print('✅ [Firestore] recalculateCategorySpending completado exitosamente');
   }
 
   // ==================== CONTRIBUTIONS ====================
@@ -728,7 +910,9 @@ class FirestoreService {
   }) async {
     final batch = _firestore.batch();
 
-    // Create month history
+    print('📅 [CloseMonth] Iniciando cierre de mes ${household.month}');
+
+    // Create month history with detailed category info
     final historyRef = _firestore
         .collection('households')
         .doc(householdId)
@@ -741,8 +925,24 @@ class FirestoreService {
     }
 
     final categorySpending = <String, double>{};
+    final categoryDetails = <String, CategorySnapshot>{};
+    
     for (final category in categories) {
       categorySpending[category.id] = category.spentThisMonth;
+      
+      // Guardar snapshot completo de la categoría
+      final totalAvailable = category.monthlyLimit + category.accumulatedBalance;
+      final balance = totalAvailable - category.spentThisMonth;
+      
+      categoryDetails[category.id] = CategorySnapshot(
+        id: category.id,
+        name: category.name,
+        icon: category.icon ?? '📁',
+        color: category.color ?? '#808080',
+        monthlyLimit: category.monthlyLimit,
+        spent: category.spentThisMonth,
+        balance: balance,
+      );
     }
 
     final history = MonthHistory(
@@ -755,9 +955,11 @@ class FirestoreService {
       closedAt: DateTime.now(),
       memberContributions: memberContributions,
       categorySpending: categorySpending,
+      categoryDetails: categoryDetails,
     );
 
     batch.set(historyRef, history.toJson());
+    print('✅ [CloseMonth] Histórico del mes guardado con ${categoryDetails.length} categorías');
 
     // Update household for next month
     batch.update(
@@ -781,19 +983,93 @@ class FirestoreService {
       );
     }
 
-    // Reset all categories' spentThisMonth
+    // Reset categories: calculate accumulated balance and reset spentThisMonth
     for (final category in categories) {
+      // Balance de este mes = presupuesto total disponible - gastado
+      final totalAvailable = category.monthlyLimit + category.accumulatedBalance;
+      final currentBalance = totalAvailable - category.spentThisMonth;
+      
+      print('📊 [CloseMonth] ${category.name}:');
+      print('   Límite mensual: \$${category.monthlyLimit}');
+      print('   Balance acumulado anterior: \$${category.accumulatedBalance}');
+      print('   Total disponible este mes: \$${totalAvailable}');
+      print('   Gastado: \$${category.spentThisMonth}');
+      print('   Balance actual: \$${currentBalance}');
+      print('   → Nuevo balance acumulado para próximo mes: \$${currentBalance}');
+      
       batch.update(
         _firestore
             .collection('households')
             .doc(householdId)
             .collection('categories')
             .doc(category.id),
-        {'spentThisMonth': 0.0},
+        {
+          'spentThisMonth': 0.0,
+          'accumulatedBalance': currentBalance, // Acumular el sobrante/déficit
+        },
       );
     }
 
     await batch.commit();
+    print('✅ [CloseMonth] Mes cerrado exitosamente');
+
+    // Limpieza automática de registros antiguos (mantener solo últimos 3 meses)
+    print('🧹 [CloseMonth] Iniciando limpieza de registros antiguos...');
+    await _cleanupOldRecords(householdId);
+    print('✅ [CloseMonth] Limpieza completada');
+  }
+
+  /// Elimina gastos y aportaciones de hace más de 3 meses
+  Future<void> _cleanupOldRecords(String householdId) async {
+    try {
+      final now = DateTime.now();
+      final threeMonthsAgo = DateTime(now.year, now.month - 3, 1);
+      
+      print('📆 [Cleanup] Eliminando registros anteriores a: ${threeMonthsAgo.toString().substring(0, 10)}');
+
+      // Eliminar gastos antiguos
+      final expensesSnapshot = await _firestore
+          .collection('households')
+          .doc(householdId)
+          .collection('expenses')
+          .where('date', isLessThan: Timestamp.fromDate(threeMonthsAgo))
+          .get();
+
+      if (expensesSnapshot.docs.isNotEmpty) {
+        final expenseBatch = _firestore.batch();
+        for (final doc in expensesSnapshot.docs) {
+          expenseBatch.delete(doc.reference);
+        }
+        await expenseBatch.commit();
+        print('🗑️ [Cleanup] Eliminados ${expensesSnapshot.docs.length} gastos antiguos');
+      } else {
+        print('✨ [Cleanup] No hay gastos antiguos para eliminar');
+      }
+
+      // Eliminar aportaciones antiguas
+      final contributionsSnapshot = await _firestore
+          .collection('households')
+          .doc(householdId)
+          .collection('contributions')
+          .where('date', isLessThan: Timestamp.fromDate(threeMonthsAgo))
+          .get();
+
+      if (contributionsSnapshot.docs.isNotEmpty) {
+        final contributionBatch = _firestore.batch();
+        for (final doc in contributionsSnapshot.docs) {
+          contributionBatch.delete(doc.reference);
+        }
+        await contributionBatch.commit();
+        print('🗑️ [Cleanup] Eliminadas ${contributionsSnapshot.docs.length} aportaciones antiguas');
+      } else {
+        print('✨ [Cleanup] No hay aportaciones antiguas para eliminar');
+      }
+
+      print('✅ [Cleanup] Limpieza completada exitosamente');
+    } catch (e) {
+      print('❌ [Cleanup] Error durante la limpieza: $e');
+      // No lanzamos el error para no interrumpir el cierre de mes
+    }
   }
 
   Stream<List<MonthHistory>> watchMonthHistory(String householdId) {
@@ -808,6 +1084,126 @@ class FirestoreService {
           .map((doc) => MonthHistory.fromJson({'id': doc.id, ...doc.data()}))
           .toList();
     });
+  }
+
+  /// Obtiene el histórico de un mes específico
+  Future<MonthHistory?> getMonthHistory(String householdId, String monthId) async {
+    try {
+      final doc = await _firestore
+          .collection('households')
+          .doc(householdId)
+          .collection('months')
+          .doc(monthId)
+          .get();
+
+      if (!doc.exists) return null;
+
+      return MonthHistory.fromJson({'id': doc.id, ...doc.data()!});
+    } catch (e) {
+      print('❌ [getMonthHistory] Error: $e');
+      return null;
+    }
+  }
+
+  /// Obtiene estadísticas agregadas de todos los tiempos
+  Future<Map<String, dynamic>> getAllTimeStats(String householdId) async {
+    try {
+      print('📊 [AllTimeStats] Calculando estadísticas de todos los tiempos...');
+
+      final snapshot = await _firestore
+          .collection('households')
+          .doc(householdId)
+          .collection('months')
+          .orderBy('closedAt', descending: false)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        return {
+          'totalSpent': 0.0,
+          'totalContributed': 0.0,
+          'monthsTracked': 0,
+          'categoryTotals': <String, Map<String, dynamic>>{},
+          'averageMonthlySpending': 0.0,
+        };
+      }
+
+      double totalSpent = 0.0;
+      double totalContributed = 0.0;
+      final categoryTotals = <String, Map<String, dynamic>>{};
+
+      for (final doc in snapshot.docs) {
+        final history = MonthHistory.fromJson({'id': doc.id, ...doc.data()});
+        
+        totalSpent += history.totalSpent;
+        totalContributed += history.totalContributed;
+
+        // Agregar por categoría
+        for (final entry in history.categoryDetails.entries) {
+          final categoryId = entry.key;
+          final snapshot = entry.value;
+
+          if (!categoryTotals.containsKey(categoryId)) {
+            categoryTotals[categoryId] = {
+              'name': snapshot.name,
+              'icon': snapshot.icon,
+              'color': snapshot.color,
+              'totalSpent': 0.0,
+              'monthsWithData': 0,
+            };
+          }
+
+          categoryTotals[categoryId]!['totalSpent'] = 
+              (categoryTotals[categoryId]!['totalSpent'] as double) + snapshot.spent;
+          categoryTotals[categoryId]!['monthsWithData'] = 
+              (categoryTotals[categoryId]!['monthsWithData'] as int) + 1;
+        }
+      }
+
+      final monthsTracked = snapshot.docs.length;
+      final averageMonthlySpending = monthsTracked > 0 ? totalSpent / monthsTracked : 0.0;
+
+      print('✅ [AllTimeStats] Calculadas estadísticas de $monthsTracked meses');
+      print('   Total gastado: \$$totalSpent');
+      print('   Total aportado: \$$totalContributed');
+      print('   Promedio mensual: \$$averageMonthlySpending');
+
+      return {
+        'totalSpent': totalSpent,
+        'totalContributed': totalContributed,
+        'monthsTracked': monthsTracked,
+        'categoryTotals': categoryTotals,
+        'averageMonthlySpending': averageMonthlySpending,
+      };
+    } catch (e) {
+      print('❌ [AllTimeStats] Error: $e');
+      return {
+        'totalSpent': 0.0,
+        'totalContributed': 0.0,
+        'monthsTracked': 0,
+        'categoryTotals': <String, Map<String, dynamic>>{},
+        'averageMonthlySpending': 0.0,
+      };
+    }
+  }
+
+  /// Obtiene los últimos N meses de histórico
+  Future<List<MonthHistory>> getRecentMonths(String householdId, {int limit = 3}) async {
+    try {
+      final snapshot = await _firestore
+          .collection('households')
+          .doc(householdId)
+          .collection('months')
+          .orderBy('closedAt', descending: true)
+          .limit(limit)
+          .get();
+
+      return snapshot.docs
+          .map((doc) => MonthHistory.fromJson({'id': doc.id, ...doc.data()}))
+          .toList();
+    } catch (e) {
+      print('❌ [getRecentMonths] Error: $e');
+      return [];
+    }
   }
 
   // ==================== INVITATION SYSTEM ====================
@@ -873,31 +1269,209 @@ class FirestoreService {
         .get();
 
     if (existingMember.exists) {
-      // Ya es miembro, solo retornar el householdId para que pueda acceder
+      print('🏠 [JoinHouseholdWithCode] Usuario ya es miembro, verificando array members...');
+      
+      // Verificar si está en el array members del household principal
+      final householdDoc = await _firestore.collection('households').doc(householdId).get();
+      final members = List<String>.from(householdDoc.data()?['members'] ?? []);
+      
+      if (!members.contains(uid)) {
+        print('🏠 [JoinHouseholdWithCode] ⚠️ Usuario NO está en array members, agregando...');
+        await _firestore.collection('households').doc(householdId).update({
+          'members': FieldValue.arrayUnion([uid]),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        print('🏠 [JoinHouseholdWithCode] ✅ Usuario agregado al array members');
+      }
+      
       return householdId;
     }
 
-    // Agregar usuario como miembro
-    await _firestore
-        .collection('households')
-        .doc(householdId)
-        .collection('members')
-        .doc(uid)
-        .set({
-      'uid': uid,
-      'displayName': displayName,
-      'email': '', // Se actualizará después
-      'share': 0.5, // Por defecto 50%
-      'monthlySalary': 0.0,
-      'contributedThisMonth': 0.0,
-      'fcmTokens': [],
-      'createdAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    print('🏠 [JoinHouseholdWithCode] Agregando nuevo miembro: $uid');
+    
+    // Usar batch para actualizar tanto el array members como el documento del miembro
+    final batch = _firestore.batch();
+    
+    // 1. Actualizar el array members en el documento principal del household
+    batch.update(
+      _firestore.collection('households').doc(householdId),
+      {
+        'members': FieldValue.arrayUnion([uid]),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+    );
+    
+    // 2. Crear el documento del miembro en la subcolección
+    batch.set(
+      _firestore.collection('households').doc(householdId).collection('members').doc(uid),
+      {
+        'uid': uid,
+        'displayName': displayName,
+        'role': 'partner',
+        'email': '',
+        'share': 0.5,
+        'monthlySalary': 0.0,
+        'contributedThisMonth': 0.0,
+        'fcmTokens': [],
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+    );
+    
+    await batch.commit();
+    print('🏠 [JoinHouseholdWithCode] ✅ Miembro agregado exitosamente');
 
     // Recalcular porcentajes
     await recalculateMemberShares(householdId);
     
     return householdId;
+  }
+
+  /// Elimina todos los datos del usuario del sistema
+  /// ADVERTENCIA: Esta acción es irreversible
+  Future<void> deleteUserData(String uid) async {
+    try {
+      // 1. Buscar todos los households donde el usuario es miembro
+      final householdsSnapshot = await _firestore
+          .collection('households')
+          .where('members', arrayContains: uid)
+          .get();
+
+      final batch = _firestore.batch();
+
+      for (var householdDoc in householdsSnapshot.docs) {
+        final householdId = householdDoc.id;
+        final householdData = householdDoc.data();
+        final members = List<String>.from(householdData['members'] ?? []);
+
+        // Si es el único miembro o el owner, eliminar todo el household
+        if (members.length == 1 && members.contains(uid)) {
+          // Eliminar el household completo incluyendo subcollections
+          await _deleteHouseholdCompletely(householdId, batch);
+        } else {
+          // Si hay más miembros, solo eliminar al usuario
+          // Eliminar el miembro de la subcollection
+          batch.delete(
+            _firestore
+                .collection('households')
+                .doc(householdId)
+                .collection('members')
+                .doc(uid),
+          );
+
+          // Remover uid del array de members
+          batch.update(
+            _firestore.collection('households').doc(householdId),
+            {
+              'members': FieldValue.arrayRemove([uid]),
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+          );
+
+          // Si era el owner, transferir ownership al primer miembro restante
+          final memberDoc = await _firestore
+              .collection('households')
+              .doc(householdId)
+              .collection('members')
+              .doc(uid)
+              .get();
+
+          if (memberDoc.exists &&
+              memberDoc.data()?['role'] == 'owner' &&
+              members.length > 1) {
+            final newOwnerUid = members.firstWhere((id) => id != uid);
+            batch.update(
+              _firestore
+                  .collection('households')
+                  .doc(householdId)
+                  .collection('members')
+                  .doc(newOwnerUid),
+              {'role': 'owner'},
+            );
+          }
+
+          // Recalcular porcentajes después de eliminar al miembro
+          // Esto se hará después de commit
+        }
+      }
+
+      await batch.commit();
+
+      // Recalcular porcentajes para los households donde se removió al usuario
+      for (var householdDoc in householdsSnapshot.docs) {
+        final householdData = householdDoc.data();
+        final members = List<String>.from(householdData['members'] ?? []);
+        
+        if (members.length > 1) {
+          await recalculateMemberShares(householdDoc.id);
+        }
+      }
+
+      print('✅ Datos del usuario eliminados exitosamente');
+    } catch (e) {
+      print('❌ Error eliminando datos del usuario: $e');
+      rethrow;
+    }
+  }
+
+  /// Método auxiliar para eliminar un household completamente
+  Future<void> _deleteHouseholdCompletely(String householdId, WriteBatch batch) async {
+    // Eliminar members
+    final membersSnapshot = await _firestore
+        .collection('households')
+        .doc(householdId)
+        .collection('members')
+        .get();
+    
+    for (var doc in membersSnapshot.docs) {
+      batch.delete(doc.reference);
+    }
+
+    // Eliminar categories
+    final categoriesSnapshot = await _firestore
+        .collection('households')
+        .doc(householdId)
+        .collection('categories')
+        .get();
+    
+    for (var doc in categoriesSnapshot.docs) {
+      batch.delete(doc.reference);
+    }
+
+    // Eliminar expenses
+    final expensesSnapshot = await _firestore
+        .collection('households')
+        .doc(householdId)
+        .collection('expenses')
+        .get();
+    
+    for (var doc in expensesSnapshot.docs) {
+      batch.delete(doc.reference);
+    }
+
+    // Eliminar contributions
+    final contributionsSnapshot = await _firestore
+        .collection('households')
+        .doc(householdId)
+        .collection('contributions')
+        .get();
+    
+    for (var doc in contributionsSnapshot.docs) {
+      batch.delete(doc.reference);
+    }
+
+    // Eliminar months
+    final monthsSnapshot = await _firestore
+        .collection('households')
+        .doc(householdId)
+        .collection('months')
+        .get();
+    
+    for (var doc in monthsSnapshot.docs) {
+      batch.delete(doc.reference);
+    }
+
+    // Finalmente, eliminar el household
+    batch.delete(_firestore.collection('households').doc(householdId));
   }
 }

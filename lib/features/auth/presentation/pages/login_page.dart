@@ -47,7 +47,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         if (households.isEmpty) {
           Navigator.of(context).pushReplacementNamed(AppRouter.createHousehold);
         } else {
-          ref.read(currentHouseholdIdProvider.notifier).state = households.first.id;
+          await ref.read(currentHouseholdIdProvider.notifier).setHouseholdId(households.first.id);
           Navigator.of(context).pushReplacementNamed(AppRouter.home);
         }
       }
@@ -85,7 +85,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         if (households.isEmpty) {
           Navigator.of(context).pushReplacementNamed(AppRouter.createHousehold);
         } else {
-          ref.read(currentHouseholdIdProvider.notifier).state = households.first.id;
+          await ref.read(currentHouseholdIdProvider.notifier).setHouseholdId(households.first.id);
           Navigator.of(context).pushReplacementNamed(AppRouter.home);
         }
       }
@@ -206,7 +206,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         return const Icon(Icons.login, size: 24);
                       },
                     ),
-                    label: const Text('Continuar con Google'),
+                    label: const Text('Iniciar sesión con Google'),
                   ),
                   const SizedBox(height: 16),
                   TextButton(

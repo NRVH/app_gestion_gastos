@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/services/firestore_service.dart';
 import '../../../../core/providers/household_provider.dart';
 import '../../../../core/providers/expense_provider.dart';
+import '../../../../core/providers/category_provider.dart';
 import '../../../../core/models/expense.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../core/utils/formatters.dart';
@@ -293,12 +294,26 @@ class ExpensesListPage extends ConsumerWidget {
       if (householdId == null) return;
 
       try {
+        print('🗑️ [ExpensesList] Eliminando gasto: ${expense.id}, Monto: ${expense.amount}');
+        
         await ref.read(firestoreServiceProvider).deleteExpense(
           householdId,
           expense.id,
           expense.categoryId,
           expense.amount,
         );
+
+        print('✅ [ExpensesList] Gasto eliminado exitosamente');
+
+        // Esperar un momento para que Firestore termine de actualizar
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        // Refrescar providers para forzar actualización inmediata
+        print('🔄 [ExpensesList] Refrescando providers...');
+        ref.refresh(categoriesProvider);
+        ref.refresh(expensesProvider);
+        ref.refresh(currentHouseholdProvider);
+        print('✅ [ExpensesList] Providers refrescados');
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
