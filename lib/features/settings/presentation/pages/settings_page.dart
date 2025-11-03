@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/firestore_service.dart';
 import '../../../../core/services/migration_service.dart';
@@ -8,10 +9,12 @@ import '../../../../core/config/theme_config.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/providers/household_provider.dart';
 import '../../../../core/providers/member_provider.dart';
+import '../../../../core/providers/update_provider.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/models/member.dart';
 import '../../../household/presentation/pages/members_page.dart';
+import 'update_details_page.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -167,16 +170,6 @@ class SettingsPage extends ConsumerWidget {
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.build, color: Colors.orange),
-                  title: const Text(
-                    'Reparar datos',
-                    style: TextStyle(color: Colors.orange),
-                  ),
-                  subtitle: const Text('Arreglar datos corruptos o incompletos'),
-                  onTap: () => _repairHouseholdData(context, ref),
-                ),
-                const Divider(height: 1),
-                ListTile(
                   leading: const Icon(Icons.delete_forever, color: Colors.red),
                   title: const Text(
                     'Eliminar casa',
@@ -186,6 +179,79 @@ class SettingsPage extends ConsumerWidget {
                   onTap: () => _deleteHousehold(context, ref),
                 ),
               ],
+            ),
+          ),
+
+          // App Updates
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'Actualización',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+          ),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            child: Consumer(
+              builder: (context, ref, child) {
+                final updateState = ref.watch(updateNotifierProvider);
+                
+                return ListTile(
+                  leading: Icon(
+                    Icons.system_update,
+                    color: updateState.hasUpdateAvailable 
+                      ? Colors.orange
+                      : Theme.of(context).colorScheme.primary,
+                  ),
+                  title: const Text('Buscar actualizaciones'),
+                  subtitle: updateState.hasUpdateAvailable
+                      ? Text(
+                          '¡Nueva versión ${updateState.availableUpdate!.version} disponible!',
+                          style: const TextStyle(
+                            color: Colors.orange,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        )
+                      : FutureBuilder<PackageInfo>(
+                          future: PackageInfo.fromPlatform(),
+                          builder: (context, snapshot) {
+                            if (snapshot.hasData) {
+                              return Text('Versión actual: ${snapshot.data!.version}');
+                            }
+                            return const Text('Versión actual: 1.0.0');
+                          },
+                        ),
+                  trailing: updateState.isChecking
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          updateState.hasUpdateAvailable
+                              ? Icons.arrow_forward_ios
+                              : Icons.refresh,
+                          size: updateState.hasUpdateAvailable ? 16 : 24,
+                        ),
+                  onTap: updateState.isChecking
+                      ? null
+                      : () {
+                          if (updateState.hasUpdateAvailable) {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => const UpdateDetailsPage(),
+                              ),
+                            );
+                          } else {
+                            ref.read(updateNotifierProvider.notifier)
+                                .checkForUpdates(forceCheck: true);
+                          }
+                        },
+                );
+              },
             ),
           ),
 
@@ -796,83 +862,6 @@ class SettingsPage extends ConsumerWidget {
         );
       },
     );
-  }
-
-  Future<void> _repairHouseholdData(BuildContext context, WidgetRef ref) async {
-    final householdId = ref.read(currentHouseholdIdProvider);
-    
-    if (householdId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No hay household seleccionado')),
-      );
-      return;
-    }
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Reparar datos'),
-          content: const Text(
-            'Esta acción revisará y corregirá cualquier dato incompleto o corrupto en tu household. '
-            '¿Deseas continuar?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Reparar'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed == true && context.mounted) {
-      // Mostrar diálogo de carga
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Reparando datos...'),
-            ],
-          ),
-        ),
-      );
-
-      try {
-        final migrationService = MigrationService();
-        await migrationService.migrateHouseholdMembers(householdId);
-
-        if (context.mounted) {
-          Navigator.of(context).pop(); // Cerrar diálogo de carga
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Datos reparados exitosamente'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } catch (e) {
-        if (context.mounted) {
-          Navigator.of(context).pop(); // Cerrar diálogo de carga
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('❌ Error al reparar datos: ${e.toString()}'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    }
   }
 
   Future<void> _signOut(BuildContext context, WidgetRef ref) async {

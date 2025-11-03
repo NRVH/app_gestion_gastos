@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/providers/category_provider.dart';
 import '../../../../core/providers/household_provider.dart';
+import '../../../../core/providers/sort_preferences_provider.dart';
 import '../../../../core/services/firestore_service.dart';
 import '../../../../core/models/category.dart';
 import '../../../../core/utils/formatters.dart';
@@ -14,24 +15,10 @@ class CategoriesTab extends ConsumerStatefulWidget {
   ConsumerState<CategoriesTab> createState() => _CategoriesTabState();
 }
 
-enum CategorySortBy {
-  alphabetical,
-  recentlyAdded,
-  amount,
-  monthlyLimit,
-}
-
-enum SortDirection {
-  ascending,
-  descending,
-}
-
 class _CategoriesTabState extends ConsumerState<CategoriesTab> {
   List<Category> _categories = [];
   String _searchQuery = '';
   bool _isSearching = false;
-  CategorySortBy _sortBy = CategorySortBy.recentlyAdded;
-  SortDirection _sortDirection = SortDirection.descending;
   final _searchController = TextEditingController();
 
   @override
@@ -43,6 +30,7 @@ class _CategoriesTabState extends ConsumerState<CategoriesTab> {
   @override
   Widget build(BuildContext context) {
     final categoriesAsync = ref.watch(categoriesProvider);
+    final sortPrefsAsync = ref.watch(sortPreferencesProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -93,47 +81,102 @@ class _CategoriesTabState extends ConsumerState<CategoriesTab> {
           ),
         ],
       ),
-      body: categoriesAsync.when(
-        data: (categories) {
-          if (categories.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.category_outlined,
-                      size: 64, color: Colors.grey[400]),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'No hay categorías',
-                    style: TextStyle(fontSize: 16),
+      body: sortPrefsAsync.when(
+        data: (sortPrefs) {
+          return categoriesAsync.when(
+            data: (categories) {
+              if (categories.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.category_outlined,
+                          size: 64, color: Colors.grey[400]),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'No hay categorías',
+                        style: TextStyle(fontSize: 16),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Toca el botón + para crear',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Toca el botón + para crear',
-                    style: TextStyle(color: Colors.grey[600]),
-                  ),
-                ],
-              ),
-            );
-          }
+                );
+              }
 
-          // Actualizar y aplicar filtros/ordenamiento
-          _categories = _applySortAndFilter(List.from(categories));
+              // Aplicar filtros/ordenamiento con las preferencias persistidas
+              _categories = _applySortAndFilter(
+                List.from(categories),
+                sortPrefs.sortBy,
+                sortPrefs.sortDirection,
+              );
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: _categories.length,
-            itemBuilder: (context, index) {
-              final category = _categories[index];
-              return _buildCategoryCard(
-                category: category, 
-                context: context,
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: _categories.length,
+                itemBuilder: (context, index) {
+                  final category = _categories[index];
+                  return _buildCategoryCard(
+                    category: category, 
+                    context: context,
+                  );
+                },
               );
             },
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, _) => Center(child: Text('Error: $error')),
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('Error: $error')),
+        error: (_, __) => categoriesAsync.when(
+          data: (categories) {
+            // Usar valores por defecto si hay error al cargar preferencias
+            if (categories.isEmpty) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.category_outlined,
+                        size: 64, color: Colors.grey[400]),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'No hay categorías',
+                      style: TextStyle(fontSize: 16),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Toca el botón + para crear',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            _categories = _applySortAndFilter(
+              List.from(categories),
+              CategorySortBy.recentlyAdded,
+              SortDirection.descending,
+            );
+
+            return ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _categories.length,
+              itemBuilder: (context, index) {
+                final category = _categories[index];
+                return _buildCategoryCard(
+                  category: category, 
+                  context: context,
+                );
+              },
+            );
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, _) => Center(child: Text('Error: $error')),
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddCategoryDialog(context),
@@ -143,7 +186,11 @@ class _CategoriesTabState extends ConsumerState<CategoriesTab> {
     );
   }
 
-  List<Category> _applySortAndFilter(List<Category> categories) {
+  List<Category> _applySortAndFilter(
+    List<Category> categories,
+    CategorySortBy sortBy,
+    SortDirection sortDirection,
+  ) {
     // Primero filtrar por búsqueda
     var filtered = categories;
     if (_searchQuery.isNotEmpty) {
@@ -153,11 +200,11 @@ class _CategoriesTabState extends ConsumerState<CategoriesTab> {
     }
 
     // Luego aplicar ordenamiento según el criterio y dirección
-    switch (_sortBy) {
+    switch (sortBy) {
       case CategorySortBy.alphabetical:
         filtered.sort((a, b) {
           final comparison = a.name.compareTo(b.name);
-          return _sortDirection == SortDirection.ascending ? comparison : -comparison;
+          return sortDirection == SortDirection.ascending ? comparison : -comparison;
         });
         break;
       case CategorySortBy.recentlyAdded:
@@ -166,19 +213,19 @@ class _CategoriesTabState extends ConsumerState<CategoriesTab> {
           if (a.createdAt == null) return 1;
           if (b.createdAt == null) return -1;
           final comparison = a.createdAt!.compareTo(b.createdAt!);
-          return _sortDirection == SortDirection.ascending ? comparison : -comparison;
+          return sortDirection == SortDirection.ascending ? comparison : -comparison;
         });
         break;
       case CategorySortBy.amount:
         filtered.sort((a, b) {
           final comparison = a.spentThisMonth.compareTo(b.spentThisMonth);
-          return _sortDirection == SortDirection.ascending ? comparison : -comparison;
+          return sortDirection == SortDirection.ascending ? comparison : -comparison;
         });
         break;
       case CategorySortBy.monthlyLimit:
         filtered.sort((a, b) {
           final comparison = a.monthlyLimit.compareTo(b.monthlyLimit);
-          return _sortDirection == SortDirection.ascending ? comparison : -comparison;
+          return sortDirection == SortDirection.ascending ? comparison : -comparison;
         });
         break;
     }
@@ -186,26 +233,13 @@ class _CategoriesTabState extends ConsumerState<CategoriesTab> {
     return filtered;
   }
 
-  Future<void> _saveSortPreferences() async {
-    final householdId = ref.read(currentHouseholdIdProvider);
-    if (householdId == null) return;
-
-    try {
-      final firestoreService = ref.read(firestoreServiceProvider);
-      
-      // Guardar preferencias de ordenamiento en el household
-      await firestoreService.updateHousehold(householdId, {
-        'categorySortBy': _sortBy.index,
-        'categorySortDirection': _sortDirection.index,
-      });
-      
-      print('✅ [CategoriesTab] Preferencias guardadas: ${_sortBy.name} (${_sortDirection.name})');
-    } catch (e) {
-      print('❌ [CategoriesTab] Error al guardar preferencias: $e');
-    }
-  }
-
   void _showSortDialog(BuildContext context) {
+    final sortPrefs = ref.read(sortPreferencesProvider).value;
+    if (sortPrefs == null) return;
+
+    CategorySortBy tempSortBy = sortPrefs.sortBy;
+    SortDirection tempSortDirection = sortPrefs.sortDirection;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -224,40 +258,40 @@ class _CategoriesTabState extends ConsumerState<CategoriesTab> {
                 RadioListTile<CategorySortBy>(
                   title: const Text('Alfabético'),
                   value: CategorySortBy.alphabetical,
-                  groupValue: _sortBy,
+                  groupValue: tempSortBy,
                   onChanged: (value) {
                     setDialogState(() {
-                      _sortBy = value!;
+                      tempSortBy = value!;
                     });
                   },
                 ),
                 RadioListTile<CategorySortBy>(
                   title: const Text('Fecha de creación'),
                   value: CategorySortBy.recentlyAdded,
-                  groupValue: _sortBy,
+                  groupValue: tempSortBy,
                   onChanged: (value) {
                     setDialogState(() {
-                      _sortBy = value!;
+                      tempSortBy = value!;
                     });
                   },
                 ),
                 RadioListTile<CategorySortBy>(
                   title: const Text('Monto gastado'),
                   value: CategorySortBy.amount,
-                  groupValue: _sortBy,
+                  groupValue: tempSortBy,
                   onChanged: (value) {
                     setDialogState(() {
-                      _sortBy = value!;
+                      tempSortBy = value!;
                     });
                   },
                 ),
                 RadioListTile<CategorySortBy>(
                   title: const Text('Límite mensual'),
                   value: CategorySortBy.monthlyLimit,
-                  groupValue: _sortBy,
+                  groupValue: tempSortBy,
                   onChanged: (value) {
                     setDialogState(() {
-                      _sortBy = value!;
+                      tempSortBy = value!;
                     });
                   },
                 ),
@@ -273,13 +307,13 @@ class _CategoriesTabState extends ConsumerState<CategoriesTab> {
                       child: OutlinedButton.icon(
                         onPressed: () {
                           setDialogState(() {
-                            _sortDirection = SortDirection.ascending;
+                            tempSortDirection = SortDirection.ascending;
                           });
                         },
                         icon: const Icon(Icons.arrow_upward),
                         label: const Text('Ascendente'),
                         style: OutlinedButton.styleFrom(
-                          backgroundColor: _sortDirection == SortDirection.ascending
+                          backgroundColor: tempSortDirection == SortDirection.ascending
                               ? Theme.of(context).colorScheme.primaryContainer
                               : null,
                         ),
@@ -290,13 +324,13 @@ class _CategoriesTabState extends ConsumerState<CategoriesTab> {
                       child: OutlinedButton.icon(
                         onPressed: () {
                           setDialogState(() {
-                            _sortDirection = SortDirection.descending;
+                            tempSortDirection = SortDirection.descending;
                           });
                         },
                         icon: const Icon(Icons.arrow_downward),
                         label: const Text('Descendente'),
                         style: OutlinedButton.styleFrom(
-                          backgroundColor: _sortDirection == SortDirection.descending
+                          backgroundColor: tempSortDirection == SortDirection.descending
                               ? Theme.of(context).colorScheme.primaryContainer
                               : null,
                         ),
@@ -314,11 +348,14 @@ class _CategoriesTabState extends ConsumerState<CategoriesTab> {
             child: const Text('Cancelar'),
           ),
           FilledButton(
-            onPressed: () {
-              setState(() {
-                // Ya están actualizados _sortBy y _sortDirection
-              });
-              _saveSortPreferences();
+            onPressed: () async {
+              // Guardar en Firestore
+              await ref.read(sortPreferencesNotifierProvider)
+                  .updateSortPreferences(tempSortBy, tempSortDirection);
+              
+              print('✅ [CategoriesTab] Preferencias guardadas: ${tempSortBy.name} (${tempSortDirection.name})');
+              
+              if (!context.mounted) return;
               Navigator.pop(context);
             },
             child: const Text('Aplicar'),

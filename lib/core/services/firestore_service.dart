@@ -1474,4 +1474,32 @@ class FirestoreService {
     // Finalmente, eliminar el household
     batch.delete(_firestore.collection('households').doc(householdId));
   }
+
+  // ==================== SORT PREFERENCES ====================
+
+  Stream<Map<String, dynamic>?> watchSortPreferences(String householdId) {
+    return _firestore
+        .collection('households')
+        .doc(householdId)
+        .snapshots()
+        .map((snapshot) {
+      if (!snapshot.exists) return null;
+      final data = snapshot.data();
+      return data?['sortPreferences'] as Map<String, dynamic>?;
+    });
+  }
+
+  Future<void> updateSortPreferences(
+    String householdId,
+    String sortBy,
+    String sortDirection,
+  ) async {
+    await _firestore.collection('households').doc(householdId).update({
+      'sortPreferences': {
+        'sortBy': sortBy,
+        'sortDirection': sortDirection,
+      },
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
 }

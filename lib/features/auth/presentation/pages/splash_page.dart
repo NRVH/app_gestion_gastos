@@ -20,6 +20,68 @@ class _SplashPageState extends ConsumerState<SplashPage> {
     _checkAuth();
   }
 
+  // Inicializar notificaciones en segundo plano sin bloquear el flujo principal
+  void _initializeNotificationsInBackground(String userId) {
+    Future.microtask(() async {
+      try {
+        print('🔔 [Background] Iniciando servicio de notificaciones para user: $userId');
+        final messagingService = ref.read(messagingServiceProvider);
+        await messagingService.initialize();
+        print('🔔 [Background] Servicio de notificaciones inicializado');
+        
+        // Obtener el token y guardarlo en Firestore
+        print('🔔 [Background] Solicitando FCM token...');
+        final token = await messagingService.getToken();
+        if (token != null) {
+          print('🔔 [Background] FCM Token obtenido: $token');
+          
+          // Guardar token en Firestore para todos los households del usuario
+          final firestoreService = ref.read(firestoreServiceProvider);
+          print('🔔 [Background] Obteniendo households del usuario...');
+          final households = await firestoreService.watchUserHouseholds(userId).first;
+          print('🔔 [Background] Households encontrados: ${households.length}');
+          
+          for (final household in households) {
+            print('🔔 [Background] Guardando token en household: ${household.id}');
+            await firestoreService.updateFcmToken(household.id, userId, token);
+            print('🔔 [Background] ✅ Token guardado exitosamente en household: ${household.id}');
+          }
+        } else {
+          print('⚠️ [Background] No se pudo obtener el FCM token');
+        }
+        
+        // Listener para actualizar token cuando se refresque
+        messagingService.onTokenRefresh.listen((newToken) async {
+          print('🔔 [Background] Token refrescado: $newToken');
+          final firestoreService = ref.read(firestoreServiceProvider);
+          final households = await firestoreService.watchUserHouseholds(userId).first;
+          
+          for (final household in households) {
+            await firestoreService.updateFcmToken(household.id, userId, newToken);
+          }
+        });
+        
+        // Escuchar mensajes cuando la app está en foreground
+        messagingService.onMessage.listen((message) {
+          print('🔔 [Foreground] Mensaje recibido: ${message.notification?.title}');
+        });
+        
+        // Escuchar cuando el usuario toca una notificación
+        messagingService.onMessageOpenedApp.listen((message) {
+          print('🔔 [Tapped] Usuario tocó notificación: ${message.notification?.title}');
+        });
+        
+        // Verificar si la app se abrió desde una notificación
+        final initialMessage = await messagingService.getInitialMessage();
+        if (initialMessage != null) {
+          print('🔔 [Initial] App abierta desde notificación: ${initialMessage.notification?.title}');
+        }
+      } catch (e) {
+        print('❌ [Background] Error al inicializar notificaciones: $e');
+      }
+    });
+  }
+
   Future<void> _checkAuth() async {
     // Esperar a que Firebase Auth se inicialice
     await Future.delayed(const Duration(milliseconds: 500));
@@ -38,76 +100,8 @@ class _SplashPageState extends ConsumerState<SplashPage> {
     
     final user = authState;
     
-    // Inicializar servicio de notificaciones
-    try {
-      print('🔔 [Splash] Iniciando servicio de notificaciones para user: ${user.uid}');
-      final messagingService = ref.read(messagingServiceProvider);
-      await messagingService.initialize();
-      print('🔔 [Splash] Servicio de notificaciones inicializado');
-      
-      // Obtener el token y guardarlo en Firestore
-      print('🔔 [Splash] Solicitando FCM token...');
-      final token = await messagingService.getToken();
-      if (token != null) {
-        print('🔔 [Splash] FCM Token obtenido: $token');
-        
-        // Guardar token en Firestore para todos los households del usuario
-        final firestoreService = ref.read(firestoreServiceProvider);
-        print('🔔 [Splash] Obteniendo households del usuario...');
-        final households = await firestoreService.watchUserHouseholds(user.uid).first;
-        print('🔔 [Splash] Households encontrados: ${households.length}');
-        
-        for (final household in households) {
-          print('🔔 [Splash] Guardando token en household: ${household.id}');
-          await firestoreService.updateFcmToken(household.id, user.uid, token);
-          print('🔔 [Splash] ✅ Token guardado exitosamente en household: ${household.id}');
-        }
-      } else {
-        print('⚠️ [Splash] No se pudo obtener el FCM token');
-        print('⚠️ [Splash] El usuario pudo haber denegado los permisos de notificación');
-      }
-      
-      // Listener para actualizar token cuando se refresque
-      messagingService.onTokenRefresh.listen((newToken) async {
-        print('🔔 [Splash] Token refrescado: $newToken');
-        final firestoreService = ref.read(firestoreServiceProvider);
-        final households = await firestoreService.watchUserHouseholds(user.uid).first;
-        
-        for (final household in households) {
-          await firestoreService.updateFcmToken(household.id, user.uid, newToken);
-        }
-      });
-      
-      // Escuchar mensajes cuando la app está en foreground
-      messagingService.onMessage.listen((message) {
-        print('🔔 [Foreground] Mensaje recibido: ${message.notification?.title}');
-        print('🔔 [Foreground] Body: ${message.notification?.body}');
-        print('🔔 [Foreground] Data: ${message.data}');
-        
-        // Mostrar notificación local o snackbar
-        // TODO: Implementar notificación local si se requiere
-      });
-      
-      // Escuchar cuando el usuario toca una notificación
-      messagingService.onMessageOpenedApp.listen((message) {
-        print('🔔 [Tapped] Usuario tocó notificación: ${message.notification?.title}');
-        print('🔔 [Tapped] Data: ${message.data}');
-        
-        // TODO: Navegar a la pantalla correspondiente según message.data['type']
-      });
-      
-      // Verificar si la app se abrió desde una notificación
-      final initialMessage = await messagingService.getInitialMessage();
-      if (initialMessage != null) {
-        print('🔔 [Initial] App abierta desde notificación: ${initialMessage.notification?.title}');
-        print('🔔 [Initial] Data: ${initialMessage.data}');
-        
-        // TODO: Navegar a la pantalla correspondiente
-      }
-    } catch (e) {
-      print('❌ [Splash] Error al inicializar notificaciones: $e');
-      // No bloqueamos la app si falla el servicio de notificaciones
-    }
+    // Inicializar servicio de notificaciones EN SEGUNDO PLANO (sin await)
+    _initializeNotificationsInBackground(user.uid);
     
     try {
       // Check if user has a household
