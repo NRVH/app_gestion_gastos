@@ -1,7 +1,7 @@
 name: app_gestion_gastos
 description: Aplicación móvil para parejas que comparten gastos
 publish_to: 'none'
-version: 1.0.2+3
+version: 1.0.3+4
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
