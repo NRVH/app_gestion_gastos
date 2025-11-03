@@ -389,9 +389,7 @@ class _ExpensesTabState extends ConsumerState<ExpensesTab> {
   }
 
   void _navigateToAddExpense(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const AddExpensePage()),
-    );
+    showAddExpenseSheet(context, ref);
   }
 
   void _showInfo(BuildContext context) {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/auth/presentation/pages/login_page.dart';
 import '../../features/auth/presentation/pages/register_page.dart';
 import '../../features/auth/presentation/pages/splash_page.dart';
@@ -41,11 +42,42 @@ class AppRouter {
       case joinHousehold:
         return MaterialPageRoute(builder: (_) => const JoinHouseholdPage());
       case addExpense:
-        return MaterialPageRoute(builder: (_) => const AddExpensePage());
+        // Usando Bottom Sheet en lugar de página completa
+        return MaterialPageRoute(
+          builder: (context) => Builder(
+            builder: (BuildContext context) {
+              // Necesitamos el ref del context, por lo que usamos Consumer
+              return Consumer(
+                builder: (context, ref, _) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    showAddExpenseSheet(context, ref);
+                    Navigator.of(context).pop();
+                  });
+                  return const SizedBox.shrink();
+                },
+              );
+            },
+          ),
+        );
       case expensesList:
         return MaterialPageRoute(builder: (_) => const ExpensesListPage());
       case addContribution:
-        return MaterialPageRoute(builder: (_) => const AddContributionPage());
+        // Usando Bottom Sheet en lugar de página completa
+        return MaterialPageRoute(
+          builder: (context) => Builder(
+            builder: (BuildContext context) {
+              return Consumer(
+                builder: (context, ref, _) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    showAddContributionSheet(context, ref);
+                    Navigator.of(context).pop();
+                  });
+                  return const SizedBox.shrink();
+                },
+              );
+            },
+          ),
+        );
       case contributionsList:
         return MaterialPageRoute(builder: (_) => const ContributionsListPage());
       case settings:

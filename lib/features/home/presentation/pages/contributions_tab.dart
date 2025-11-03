@@ -7,6 +7,7 @@ import '../../../../core/services/firestore_service.dart';
 import '../../../../core/models/contribution.dart';
 import '../../../../core/models/member.dart';
 import '../../../../core/utils/formatters.dart';
+import '../../../contributions/presentation/pages/add_contribution_page.dart';
 import '../../../contributions/presentation/pages/edit_contribution_page.dart';
 
 class ContributionsTab extends ConsumerStatefulWidget {
@@ -356,7 +357,7 @@ class _ContributionsTabState extends ConsumerState<ContributionsTab> {
   }
 
   void _navigateToAddContribution(BuildContext context) {
-    Navigator.of(context).pushNamed('/add-contribution');
+    showAddContributionSheet(context, ref);
   }
 
   void _showInfo(BuildContext context) {
