@@ -48,7 +48,11 @@ build/
 **/android/**/gradle-wrapper.jar
 **/android/.gradle
 **/android/gradle/
-**/android/key.properties
+# Keystore y credenciales - Descomentado porque es repo privado
+# **/android/key.properties
+# **/android/app/upload-keystore.jks
+# *.jks
+# *.keystore
 
 # Firebase
 **/google-services.json
