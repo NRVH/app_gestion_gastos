@@ -19,9 +19,14 @@ class OverviewTab extends ConsumerWidget {
     final householdAsync = ref.watch(currentHouseholdProvider);
     final currentMemberAsync = ref.watch(currentMemberProvider);
     final membersAsync = ref.watch(householdMembersProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        ),
         titleSpacing: 16,
         title: householdAsync.when(
           data: (household) => Align(
@@ -44,7 +49,7 @@ class OverviewTab extends ConsumerWidget {
             tooltip: 'Estadísticas',
           ),
           IconButton(
-            icon: const Icon(Icons.calendar_month),
+            icon: const Icon(Icons.history),
             onPressed: () => _showCloseMonthDialog(context, ref),
             tooltip: 'Cerrar mes',
           ),
@@ -119,8 +124,8 @@ class OverviewTab extends ConsumerWidget {
                   ),
                   child: const Icon(
                     Icons.history,
-                    color: Colors.purple,
                     size: 28,
+                    color: Colors.purple,
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -181,7 +186,7 @@ class OverviewTab extends ConsumerWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.person, color: Colors.white, size: 28),
+                const Text('👤', style: TextStyle(fontSize: 28)),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -266,10 +271,10 @@ class OverviewTab extends ConsumerWidget {
             Row(
               children: [
                 Expanded(
-                  child: _buildPersonalStat(
+                  child: _buildPersonalStatEmoji(
                     'Aportado',
                     CurrencyFormatter.format(contributed),
-                    Icons.check_circle_outline,
+                    '✅',
                   ),
                 ),
                 Container(
@@ -278,10 +283,10 @@ class OverviewTab extends ConsumerWidget {
                   color: Colors.white.withOpacity(0.3),
                 ),
                 Expanded(
-                  child: _buildPersonalStat(
+                  child: _buildPersonalStatEmoji(
                     remaining > 0 ? 'Falta' : 'Extra',
                     CurrencyFormatter.format(remaining.abs()),
-                    remaining > 0 ? Icons.schedule : Icons.star,
+                    remaining > 0 ? '⏳' : '⭐',
                   ),
                 ),
                 Container(
@@ -290,10 +295,10 @@ class OverviewTab extends ConsumerWidget {
                   color: Colors.white.withOpacity(0.3),
                 ),
                 Expanded(
-                  child: _buildPersonalStat(
+                  child: _buildPersonalStatEmoji(
                     'Meta',
                     CurrencyFormatter.format(expectedContribution),
-                    Icons.flag,
+                    '🎯',
                   ),
                 ),
               ],
@@ -304,10 +309,10 @@ class OverviewTab extends ConsumerWidget {
     );
   }
 
-  Widget _buildPersonalStat(String label, String value, IconData icon) {
+  Widget _buildPersonalStatEmoji(String label, String value, String emoji) {
     return Column(
       children: [
-        Icon(icon, color: Colors.white, size: 20),
+        Text(emoji, style: const TextStyle(fontSize: 20)),
         const SizedBox(height: 4),
         Text(
           label,
@@ -340,7 +345,7 @@ class OverviewTab extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Balance de la casa',
+            '🏠 Balance de la casa',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -350,20 +355,20 @@ class OverviewTab extends ConsumerWidget {
           Row(
             children: [
               Expanded(
-                child: _buildBalanceCard(
+                child: _buildBalanceCardEmoji(
                   'Disponible',
                   household.availableBalance,
                   Colors.green,
-                  Icons.account_balance_wallet,
+                  '💰',
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _buildBalanceCard(
+                child: _buildBalanceCardEmoji(
                   'Meta mensual',
                   household.monthTarget,
                   Colors.blue,
-                  Icons.flag,
+                  '🎯',
                 ),
               ),
             ],
@@ -372,35 +377,35 @@ class OverviewTab extends ConsumerWidget {
           Row(
             children: [
               Expanded(
-                child: _buildBalanceCard(
+                child: _buildBalanceCardEmoji(
                   'Aportado',
                   household.monthPool,
                   Colors.orange,
-                  Icons.savings,
+                  '💸',
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: membersAsync.when(
-                  data: (members) => _buildBalanceCard(
+                  data: (members) => _buildBalanceCardEmoji(
                     'Miembros',
                     members.length.toDouble(),
                     Colors.purple,
-                    Icons.people,
+                    '👥',
                     isCount: true,
                   ),
-                  loading: () => _buildBalanceCard(
+                  loading: () => _buildBalanceCardEmoji(
                     'Miembros',
                     0,
                     Colors.purple,
-                    Icons.people,
+                    '👥',
                     isCount: true,
                   ),
-                  error: (_, __) => _buildBalanceCard(
+                  error: (_, __) => _buildBalanceCardEmoji(
                     'Miembros',
                     0,
                     Colors.purple,
-                    Icons.people,
+                    '👥',
                     isCount: true,
                   ),
                 ),
@@ -412,11 +417,11 @@ class OverviewTab extends ConsumerWidget {
     );
   }
 
-  Widget _buildBalanceCard(
+  Widget _buildBalanceCardEmoji(
     String label,
     double value,
     Color color,
-    IconData icon, {
+    String emoji, {
     bool isCount = false,
   }) {
     return Card(
@@ -427,7 +432,7 @@ class OverviewTab extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Icon(icon, color: color, size: 20),
+                Text(emoji, style: const TextStyle(fontSize: 20)),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -466,12 +471,18 @@ class OverviewTab extends ConsumerWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Cerrar mes'),
+        title: const Row(
+          children: [
+            Text('📅', style: TextStyle(fontSize: 24)),
+            SizedBox(width: 8),
+            Text('Cerrar mes'),
+          ],
+        ),
         content: const Text(
           '¿Estás seguro de cerrar el mes actual?\n\n'
-          '• Se guardarán los sobrantes/déficits de cada categoría\n'
-          '• Se reiniciarán los gastos y aportaciones del mes\n'
-          '• Esta acción no se puede deshacer',
+          '💾 Se guardarán los sobrantes/déficits de cada categoría\n'
+          '🔄 Se reiniciarán los gastos y aportaciones del mes\n'
+          '⚠️ Esta acción no se puede deshacer',
         ),
         actions: [
           TextButton(
@@ -648,11 +659,17 @@ class _ShareHouseholdDialogState extends State<_ShareHouseholdDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Compartir Hogar'),
+      title: const Row(
+        children: [
+          Text('🔗', style: TextStyle(fontSize: 24)),
+          SizedBox(width: 8),
+          Text('Compartir Hogar'),
+        ],
+      ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.qr_code, size: 80, color: Colors.blue),
+          const Text('📱', style: TextStyle(fontSize: 80)),
           const SizedBox(height: 16),
           Text(
             widget.householdName,
@@ -684,7 +701,7 @@ class _ShareHouseholdDialogState extends State<_ShareHouseholdDialog> {
           ),
           const SizedBox(height: 16),
           Text(
-            'El código expira en 24 horas',
+            '⏱️ El código expira en 24 horas',
             style: TextStyle(
               color: Colors.grey[600],
               fontSize: 12,
@@ -692,7 +709,7 @@ class _ShareHouseholdDialogState extends State<_ShareHouseholdDialog> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Comparte este código con tu pareja para que pueda unirse al hogar.',
+            '👥 Comparte este código con tu pareja para que pueda unirse al hogar.',
             style: TextStyle(fontSize: 12),
             textAlign: TextAlign.center,
           ),

@@ -1,3 +1,23 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// 🧪 MOCK DATA - SOLO PARA DESARROLLO Y TESTING
+// ═══════════════════════════════════════════════════════════════════════════
+// 
+// ⚠️ IMPORTANTE: Este archivo NO afecta la app en producción
+// 
+// Este archivo contiene datos de prueba que se usan ÚNICAMENTE cuando:
+// - ENABLE_TEST_MODE = true en auth_service.dart (actualmente: false)
+// - Se está desarrollando o debuggeando sin Firebase real
+// 
+// Uso actual:
+// - FirestoreService lo importa pero solo lo usa si _isTestMode = true
+// - En producción (ENABLE_TEST_MODE = false), este código nunca se ejecuta
+// 
+// Si vas a eliminar este archivo:
+// - Verificar que ENABLE_TEST_MODE = false en auth_service.dart
+// - Eliminar el import en firestore_service.dart
+// - Asegurar que no hay tests que dependan de estos datos
+// ═══════════════════════════════════════════════════════════════════════════
+
 import '../models/household.dart';
 import '../models/member.dart';
 import '../models/category.dart';

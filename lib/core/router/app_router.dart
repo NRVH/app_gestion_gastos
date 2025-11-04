@@ -11,6 +11,7 @@ import '../../features/expenses/presentation/pages/add_expense_page.dart';
 import '../../features/expenses/presentation/pages/expenses_list_page.dart';
 import '../../features/contributions/presentation/pages/add_contribution_page.dart';
 import '../../features/contributions/presentation/pages/contributions_list_page.dart';
+import '../../features/categories/presentation/pages/manage_categories_page.dart';
 import '../../features/settings/presentation/pages/settings_page.dart';
 
 class AppRouter {
@@ -24,6 +25,7 @@ class AppRouter {
   static const String expensesList = '/expenses-list';
   static const String addContribution = '/add-contribution';
   static const String contributionsList = '/contributions-list';
+  static const String manageCategories = '/manage-categories';
   static const String settings = '/settings';
   static const String members = '/members';
 
@@ -80,6 +82,8 @@ class AppRouter {
         );
       case contributionsList:
         return MaterialPageRoute(builder: (_) => const ContributionsListPage());
+      case manageCategories:
+        return MaterialPageRoute(builder: (_) => const ManageCategoriesPage());
       case settings:
         return MaterialPageRoute(builder: (_) => const SettingsPage());
       case members:
