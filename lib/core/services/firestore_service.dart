@@ -20,6 +20,26 @@ class FirestoreService {
   
   // 🧪 Verificar si estamos en modo TEST
   bool get _isTestMode => ENABLE_TEST_MODE;
+  
+  // TODO: OPTIMIZACIÓN FUTURA - Configurabilidad de test mode
+  // En lugar de depender de una constante global (ENABLE_TEST_MODE), considerar:
+  // 
+  // Opción 1 - Inyección por constructor:
+  //   FirestoreService(this._firestore, {bool isTestMode = false});
+  //   
+  // Opción 2 - Provider con configuración:
+  //   final firestoreServiceProvider = Provider<FirestoreService>((ref) {
+  //     final isTestMode = ref.watch(appConfigProvider).isTestMode;
+  //     return FirestoreService(_firestore, isTestMode: isTestMode);
+  //   });
+  //
+  // Beneficios:
+  // - Facilita testing unitario sin modificar constantes globales
+  // - Permite diferentes instancias del servicio con configuraciones distintas
+  // - Mejora la inyección de dependencias siguiendo principios SOLID
+  //
+  // RIESGO: MEDIO - Requiere actualizar todas las instanciaciones del servicio
+  // PRIORIDAD: BAJA - El sistema actual funciona correctamente
 
   // ==================== HOUSEHOLD ====================
 

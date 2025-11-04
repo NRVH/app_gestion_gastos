@@ -29,16 +29,19 @@ class Member with _$Member {
 extension MemberExtension on Member {
   double expectedContribution(double monthTarget) => monthTarget * share;
   
-  double remainingContribution(double monthTarget) =>
-      (expectedContribution(monthTarget) - contributedThisMonth)
-          .clamp(0.0, double.infinity);
+  // Optimización: calcular expectedContribution solo una vez
+  double remainingContribution(double monthTarget) {
+    final expected = monthTarget * share;
+    return (expected - contributedThisMonth).clamp(0.0, double.infinity);
+  }
   
   double contributionProgress(double monthTarget) {
-    final expected = expectedContribution(monthTarget);
+    final expected = monthTarget * share;
     if (expected == 0) return 0.0;
     return (contributedThisMonth / expected).clamp(0.0, 1.0);
   }
   
+  // Optimización: calcular directamente sin llamada adicional a método
   bool hasMetGoal(double monthTarget) =>
-      contributedThisMonth >= expectedContribution(monthTarget);
+      contributedThisMonth >= monthTarget * share;
 }

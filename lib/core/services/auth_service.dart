@@ -385,6 +385,41 @@ class AuthService {
 }
 
 // 🧪 Clase simulada de User para modo TEST
+// 
+// TODO: OPTIMIZACIÓN FUTURA - Refactorizar implementación de _TestUser
+// 
+// La implementación actual de _TestUser tiene varios problemas:
+// 1. Implementa toda la interfaz User con muchos métodos que lanzan UnimplementedError
+// 2. No es reutilizable - está acoplada a AuthService
+// 3. Difícil de mantener cuando Firebase actualiza la interfaz User
+//
+// SUGERENCIAS DE MEJORA:
+//
+// Opción 1 - Usar paquete mockito/fake para testing:
+//   - Crear MockUser con mockito
+//   - Más mantenible y estándar en la comunidad Flutter
+//   - Mejor separación de concerns
+//
+// Opción 2 - Extraer a un archivo separado de test utilities:
+//   - lib/core/testing/mock_auth.dart
+//   - Incluir MockUser, MockUserCredential, MockAuthService
+//   - Reutilizable en tests unitarios
+//
+// Opción 3 - Usar un patrón Repository/Adapter:
+//   - AuthRepository interface
+//   - FirebaseAuthRepository (producción)
+//   - MockAuthRepository (testing)
+//   - Mejor testabilidad y SOLID principles
+//
+// BENEFICIOS:
+// - Código más limpio y mantenible
+// - Facilita testing automatizado
+// - Reduce acoplamiento con Firebase
+// - Mejor escalabilidad
+//
+// RIESGO: MEDIO - Requiere refactorizar AuthService y actualizar dependencias
+// PRIORIDAD: MEDIA - Mejoraría calidad de código pero no es crítico
+// ESTIMACIÓN: 4-6 horas de desarrollo + testing
 class _TestUser implements User {
   @override
   final String uid;

@@ -37,11 +37,17 @@ extension CategoryExtension on Category {
   
   bool get isOverBudget => spentThisMonth > totalAvailable;
   
-  bool get isNearLimit => spentThisMonth >= totalAvailable * 0.8 && !isOverBudget;
+  // Optimización: evitar recalcular totalAvailable múltiples veces
+  bool get isNearLimit {
+    final total = totalAvailable;
+    return spentThisMonth >= total * 0.8 && spentThisMonth <= total;
+  }
   
+  // Optimización: usar lógica más eficiente con un solo cálculo de comparación
   CategoryStatus get status {
-    if (isOverBudget) return CategoryStatus.overBudget;
-    if (isNearLimit) return CategoryStatus.nearLimit;
+    final total = totalAvailable;
+    if (spentThisMonth > total) return CategoryStatus.overBudget;
+    if (spentThisMonth >= total * 0.8) return CategoryStatus.nearLimit;
     return CategoryStatus.ok;
   }
 }
