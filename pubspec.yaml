@@ -68,19 +68,23 @@ flutter_launcher_icons:
   ios: true
   image_path: "assets/icon/app_icon.png"
   min_sdk_android: 21
-  # Adaptive icons para Android 8.0+ (fondo azul degradado)
+  # Adaptive icon para Android (Material You)
   adaptive_icon_background: "#3D5AFE"
   adaptive_icon_foreground: "assets/icon/app_icon.png"
-  # Generar íconos de notificación
-  android_notification_icon: true
-  android_notification_icon_color: "#3D5AFE"
+  # Para notificaciones (ícono monocromático)
+  android_notification_icon:
+    name: "ic_notification"
+    background_color: "#3D5AFE"
 
 # Configuración del splash screen
 flutter_native_splash:
-  color: "#3D5AFE"
+  color: "#FFFFFF"
   image: "assets/icon/app_icon.png"
   android: true
   ios: true
+  web: false
   android_12:
-    color: "#3D5AFE"
+    color: "#FFFFFF"
     image: "assets/icon/app_icon.png"
+  ios_content_mode: "center"
+  android_gravity: "center"

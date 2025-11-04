@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Color principal de la app para notificaciones (azul degradado) -->
+    <!-- Color principal de la app para notificaciones (azul del ícono) -->
     <color name="notification_color">#3D5AFE</color>
-    <!-- Color de fondo para adaptive icon -->
     <color name="ic_launcher_background">#3D5AFE</color>
 </resources>
