@@ -85,14 +85,14 @@ class _SplashPageState extends ConsumerState<SplashPage> {
             ),
             const SizedBox(height: 24),
             Text(
-              'Gestión de Gastos',
+              'NFTB Wallet',
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Para parejas',
+              'Para nosotros',
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     color: Colors.grey,
                   ),
