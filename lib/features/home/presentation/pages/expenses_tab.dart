@@ -1,14 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/providers/expense_provider.dart';
 import '../../../../core/providers/category_provider.dart';
 import '../../../../core/providers/household_provider.dart';
+import '../../../../core/providers/sort_preferences_provider.dart';
 import '../../../../core/services/firestore_service.dart';
 import '../../../../core/models/expense.dart';
 import '../../../../core/models/category.dart';
 import '../../../../core/utils/formatters.dart';
+import '../../../../core/config/theme_config.dart';
 import '../../../expenses/presentation/pages/add_expense_page.dart';
 import '../../../expenses/presentation/pages/edit_expense_page.dart';
+
+enum ExpenseSortCriteria {
+  amount,
+  date,
+  category,
+  person,
+}
 
 class ExpensesTab extends ConsumerStatefulWidget {
   const ExpensesTab({super.key});
@@ -20,12 +30,15 @@ class ExpensesTab extends ConsumerStatefulWidget {
 class _ExpensesTabState extends ConsumerState<ExpensesTab> {
   String? _selectedCategoryId;
   String _searchQuery = '';
+  ExpenseSortCriteria _sortCriteria = ExpenseSortCriteria.amount;
+  bool _sortAscending = false;
 
   @override
   Widget build(BuildContext context) {
     final householdAsync = ref.watch(currentHouseholdProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
     final expensesAsync = ref.watch(expensesProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       body: CustomScrollView(
@@ -33,12 +46,21 @@ class _ExpensesTabState extends ConsumerState<ExpensesTab> {
           SliverAppBar(
             floating: true,
             snap: true,
+            systemOverlayStyle: SystemUiOverlayStyle(
+              statusBarColor: Colors.transparent,
+              statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+            ),
             title: const Text('Gastos'),
             actions: [
               IconButton(
                 icon: const Icon(Icons.info_outline),
                 onPressed: () => _showInfo(context),
                 tooltip: 'Información',
+              ),
+              IconButton(
+                icon: const Icon(Icons.sort),
+                onPressed: () => _showSortDialog(context),
+                tooltip: 'Ordenar',
               ),
             ],
           ),
@@ -66,8 +88,8 @@ class _ExpensesTabState extends ConsumerState<ExpensesTab> {
                       .where((e) => e.categoryId == _selectedCategoryId)
                       .toList();
 
-              // Ordenar por monto de mayor a menor
-              filteredExpenses.sort((a, b) => b.amount.compareTo(a.amount));
+              // Ordenar según criterio seleccionado
+              _sortExpenses(filteredExpenses, categoriesAsync.value ?? []);
 
               // Group expenses by date
               final groupedExpenses = <String, List<Expense>>{};
@@ -83,8 +105,7 @@ class _ExpensesTabState extends ConsumerState<ExpensesTab> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.receipt_long,
-                            size: 64, color: Colors.grey[400]),
+                        Icon(Icons.receipt_long, size: 64, color: Colors.grey),
                         const SizedBox(height: 16),
                         Text(
                           _selectedCategoryId == null
@@ -335,15 +356,40 @@ class _ExpensesTabState extends ConsumerState<ExpensesTab> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        icon: Icon(
+          Icons.warning_rounded,
+          color: Colors.orange.shade600,
+          size: 48,
+        ),
         title: const Text('Eliminar gasto'),
-        content: Text('¿Eliminar "$description"?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '¿Estás seguro de eliminar "$description"?',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Esta acción no se puede deshacer.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancelar'),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: context.appPalette.danger,
+            ),
             child: const Text('Eliminar'),
           ),
         ],
@@ -413,17 +459,143 @@ class _ExpensesTabState extends ConsumerState<ExpensesTab> {
     );
   }
 
-  void _editExpense(BuildContext context, Expense expense) async {
-    final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (context) => EditExpensePage(expense: expense),
+  void _editExpense(BuildContext context, Expense expense) {
+    showEditExpenseSheet(context, ref, expense);
+  }
+
+  void _sortExpenses(List<Expense> expenses, List<Category> categories) {
+    switch (_sortCriteria) {
+      case ExpenseSortCriteria.amount:
+        expenses.sort((a, b) => _sortAscending 
+            ? a.amount.compareTo(b.amount)
+            : b.amount.compareTo(a.amount));
+        break;
+      case ExpenseSortCriteria.date:
+        expenses.sort((a, b) => _sortAscending
+            ? a.date.compareTo(b.date)
+            : b.date.compareTo(a.date));
+        break;
+      case ExpenseSortCriteria.category:
+        expenses.sort((a, b) {
+          final catA = categories.firstWhere((c) => c.id == a.categoryId,
+              orElse: () => Category(id: '', name: 'Sin categoría', monthlyLimit: 0, icon: '❓', color: '#808080'));
+          final catB = categories.firstWhere((c) => c.id == b.categoryId,
+              orElse: () => Category(id: '', name: 'Sin categoría', monthlyLimit: 0, icon: '❓', color: '#808080'));
+          return _sortAscending
+              ? catA.name.compareTo(catB.name)
+              : catB.name.compareTo(catA.name);
+        });
+        break;
+      case ExpenseSortCriteria.person:
+        expenses.sort((a, b) => _sortAscending
+            ? (a.byDisplayName ?? '').compareTo(b.byDisplayName ?? '')
+            : (b.byDisplayName ?? '').compareTo(a.byDisplayName ?? ''));
+        break;
+    }
+  }
+
+  void _showSortDialog(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle bar
+            Container(
+              margin: const EdgeInsets.only(bottom: 20),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            
+            // Título
+            const Text(
+              'Ordenar gastos',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 20),
+            
+            // Opciones de ordenamiento
+            _buildSortOption(Icons.attach_money, 'Monto', ExpenseSortCriteria.amount),
+            _buildSortOption(Icons.calendar_today, 'Fecha', ExpenseSortCriteria.date),
+            _buildSortOption(Icons.category, 'Categoría', ExpenseSortCriteria.category),
+            _buildSortOption(Icons.person, 'Persona', ExpenseSortCriteria.person),
+            
+            const SizedBox(height: 20),
+            const Divider(),
+            const SizedBox(height: 12),
+            
+            // Toggle Ascendente/Descendente
+            Row(
+              children: [
+                const Icon(Icons.swap_vert, size: 20),
+                const SizedBox(width: 12),
+                const Text('Orden:', style: TextStyle(fontWeight: FontWeight.w500)),
+                const Spacer(),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('Desc')),
+                    ButtonSegment(value: true, label: Text('Asc')),
+                  ],
+                  selected: {_sortAscending},
+                  onSelectionChanged: (Set<bool> selection) {
+                    setState(() {
+                      _sortAscending = selection.first;
+                    });
+                  },
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 20),
+            
+            // Botón cerrar
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Aplicar'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  Widget _buildSortOption(IconData icon, String label, ExpenseSortCriteria criteria) {
+    final isSelected = _sortCriteria == criteria;
+    final palette = context.appPalette;
     
-    if (result == true && mounted) {
-      // Refresh the expenses list
-      ref.refresh(expensesProvider);
-    }
+    return ListTile(
+      leading: Icon(icon, color: isSelected ? palette.secondary : null),
+      title: Text(
+        label,
+        style: TextStyle(
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          color: isSelected ? palette.secondary : null,
+        ),
+      ),
+      trailing: isSelected ? Icon(Icons.check, color: palette.secondary) : null,
+      onTap: () {
+        setState(() {
+          _sortCriteria = criteria;
+        });
+      },
+    );
   }
 }
 

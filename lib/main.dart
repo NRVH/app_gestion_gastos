@@ -5,6 +5,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'core/config/theme_config.dart';
+import 'core/config/app_palettes.dart';
 import 'core/router/app_router.dart';
 import 'core/providers/household_provider.dart';
 import 'core/services/messaging_service.dart';
@@ -52,13 +53,14 @@ class MyApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
-    final colorScheme = ref.watch(colorSchemeProvider);
+    final paletteId = ref.watch(appPaletteProvider);
+    final palette = AppPalettes.getPalette(paletteId);
     
     return MaterialApp(
       title: 'Gestión Gastos Parejas',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme(colorScheme),
-      darkTheme: AppTheme.darkTheme(colorScheme),
+      theme: AppTheme.lightTheme(palette),
+      darkTheme: AppTheme.darkTheme(palette),
       themeMode: themeMode,
       onGenerateRoute: AppRouter.onGenerateRoute,
       initialRoute: AppRouter.splash,

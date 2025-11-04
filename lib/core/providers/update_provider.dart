@@ -53,6 +53,9 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
       state = state.copyWith(
         availableUpdate: _updateService.cachedUpdate,
       );
+      
+      // Mostrar notificación local si hay actualización
+      _updateService.showUpdateNotification(_updateService.cachedUpdate!);
     }
   }
 
@@ -71,6 +74,11 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
         availableUpdate: updateInfo,
         isChecking: false,
       );
+      
+      // Mostrar notificación si hay nueva actualización
+      if (updateInfo != null) {
+        _updateService.showUpdateNotification(updateInfo);
+      }
     } catch (e) {
       state = state.copyWith(
         isChecking: false,

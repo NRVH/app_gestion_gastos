@@ -3,6 +3,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <!-- Permiso para notificaciones en Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Permiso para instalar paquetes (necesario para sistema de actualización) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     
     <application
         android:label="Gestión Gastos"
@@ -40,5 +42,16 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_color"
             android:resource="@color/notification_color" />
+        
+        <!-- FileProvider para compartir APKs de forma segura -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

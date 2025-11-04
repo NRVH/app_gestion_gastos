@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -108,13 +109,24 @@ class UpdateService {
       final response = await http.get(
         Uri.parse('https://api.github.com/repos/$_githubOwner/$_githubRepo/releases/latest'),
         headers: {'Accept': 'application/vnd.github.v3+json'},
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          throw Exception('Timeout al consultar GitHub API. Verifica tu conexión a internet.');
+        },
+      );
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
         final updateInfo = UpdateInfo.fromJson(json);
         
         print('🆕 [Update] Última versión en GitHub: ${updateInfo.version}');
+        
+        // Verificar que el APK esté disponible
+        if (updateInfo.downloadUrl.isEmpty) {
+          print('⚠️ [Update] No hay APK disponible en el release');
+          throw Exception('No se encontró APK en el release de GitHub');
+        }
         
         // Comparar versiones
         final latestVersion = Version.parse(updateInfo.version);
@@ -131,13 +143,28 @@ class UpdateService {
           await _saveLastCheckTime();
           return null;
         }
+      } else if (response.statusCode == 404) {
+        print('❌ [Update] No se encontró ningún release en GitHub');
+        throw Exception('No hay releases publicados en GitHub');
+      } else if (response.statusCode == 403) {
+        print('❌ [Update] Límite de rate limit de GitHub API excedido');
+        throw Exception('Demasiadas solicitudes. Intenta más tarde.');
       } else {
         print('❌ [Update] Error en API de GitHub: ${response.statusCode}');
-        return null;
+        throw Exception('Error del servidor de GitHub (${response.statusCode})');
       }
+    } on SocketException catch (e) {
+      print('❌ [Update] Sin conexión a internet: $e');
+      throw Exception('Sin conexión a internet. Verifica tu red.');
+    } on TimeoutException catch (e) {
+      print('❌ [Update] Timeout: $e');
+      throw Exception('Tiempo de espera agotado. Intenta de nuevo.');
+    } on FormatException catch (e) {
+      print('❌ [Update] Error parseando respuesta: $e');
+      throw Exception('Error procesando la respuesta de GitHub');
     } catch (e) {
-      print('❌ [Update] Error al verificar actualizaciones: $e');
-      return null;
+      print('❌ [Update] Error inesperado: $e');
+      rethrow;
     }
   }
 
@@ -158,44 +185,96 @@ class UpdateService {
       final fileName = 'app-update-${updateInfo.version}.apk';
       final file = File('${tempDir.path}/$fileName');
 
+      // Si ya existe el archivo, eliminarlo primero
+      if (await file.exists()) {
+        await file.delete();
+        print('🗑️ [Update] APK anterior eliminado');
+      }
+
       // Descargar con progreso
-      final request = await http.Client().send(
+      final client = http.Client();
+      final request = await client.send(
         http.Request('GET', Uri.parse(updateInfo.downloadUrl)),
+      ).timeout(
+        const Duration(minutes: 5),
+        onTimeout: () {
+          client.close();
+          throw Exception('Tiempo de descarga agotado. Verifica tu conexión.');
+        },
       );
 
       if (request.statusCode != 200) {
-        throw Exception('Error al descargar: ${request.statusCode}');
+        client.close();
+        throw Exception('Error al descargar APK (código ${request.statusCode})');
       }
 
       final contentLength = request.contentLength ?? 0;
+      if (contentLength == 0) {
+        print('⚠️ [Update] Tamaño del archivo desconocido');
+      }
+      
       var receivedBytes = 0;
       final bytes = <int>[];
 
-      await for (var chunk in request.stream) {
-        bytes.addAll(chunk);
-        receivedBytes += chunk.length;
-        
-        if (contentLength > 0) {
-          final progress = receivedBytes / contentLength;
-          onProgress(progress);
-          print('⬇️ [Update] Progreso: ${(progress * 100).toStringAsFixed(1)}%');
+      try {
+        await for (var chunk in request.stream) {
+          bytes.addAll(chunk);
+          receivedBytes += chunk.length;
+          
+          if (contentLength > 0) {
+            final progress = receivedBytes / contentLength;
+            onProgress(progress);
+            if (receivedBytes % (1024 * 1024) == 0 || progress == 1.0) { // Log cada MB
+              print('⬇️ [Update] Progreso: ${(progress * 100).toStringAsFixed(1)}% (${(receivedBytes / (1024 * 1024)).toStringAsFixed(1)} MB)');
+            }
+          }
         }
+      } catch (e) {
+        client.close();
+        throw Exception('Error durante la descarga: $e');
+      }
+
+      client.close();
+
+      // Verificar que se descargó algo
+      if (bytes.isEmpty) {
+        throw Exception('El archivo descargado está vacío');
       }
 
       // Guardar archivo
       await file.writeAsBytes(bytes);
-      print('✅ [Update] APK descargado: ${file.path}');
+      final fileSize = await file.length();
+      print('✅ [Update] APK descargado: ${file.path} (${(fileSize / (1024 * 1024)).toStringAsFixed(2)} MB)');
+
+      // Verificar que el archivo existe y tiene contenido
+      if (!await file.exists()) {
+        throw Exception('Error al guardar el archivo APK');
+      }
 
       // Instalar APK
       print('📦 [Update] Abriendo instalador...');
-      final result = await OpenFilex.open(file.path);
+      final result = await OpenFilex.open(
+        file.path,
+        type: 'application/vnd.android.package-archive',
+      );
       
-      if (result.type != ResultType.done) {
-        print('⚠️ [Update] Resultado de instalación: ${result.type} - ${result.message}');
-      } else {
+      if (result.type == ResultType.done) {
         print('✅ [Update] Instalador abierto exitosamente');
+      } else if (result.type == ResultType.noAppToOpen) {
+        throw Exception('No se puede abrir el instalador. Verifica los permisos.');
+      } else if (result.type == ResultType.fileNotFound) {
+        throw Exception('Archivo APK no encontrado después de la descarga');
+      } else {
+        print('⚠️ [Update] Resultado: ${result.type} - ${result.message}');
+        throw Exception(result.message ?? 'Error desconocido al abrir el instalador');
       }
       
+    } on SocketException catch (e) {
+      print('❌ [Update] Sin conexión durante la descarga: $e');
+      throw Exception('Perdiste la conexión a internet durante la descarga');
+    } on TimeoutException catch (e) {
+      print('❌ [Update] Timeout durante descarga: $e');
+      throw Exception('Descarga muy lenta o conexión inestable');
     } catch (e) {
       print('❌ [Update] Error al descargar/instalar: $e');
       rethrow;
@@ -268,4 +347,12 @@ class UpdateService {
 
   /// Verifica si hay actualización disponible en caché
   bool get hasUpdateAvailable => _cachedUpdate != null;
+
+  /// Muestra una notificación local cuando hay actualización disponible
+  void showUpdateNotification(UpdateInfo updateInfo) {
+    // Por ahora solo log, se puede implementar notificación local más adelante
+    print('🔔 [Update] Notificación: Nueva versión ${updateInfo.version} disponible');
+    // TODO: Implementar notificación local usando flutter_local_notifications
+    // si se desea una notificación más prominente
+  }
 }

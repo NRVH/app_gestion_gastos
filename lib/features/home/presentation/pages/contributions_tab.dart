@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/providers/contribution_provider.dart';
 import '../../../../core/providers/member_provider.dart';
@@ -7,8 +8,15 @@ import '../../../../core/services/firestore_service.dart';
 import '../../../../core/models/contribution.dart';
 import '../../../../core/models/member.dart';
 import '../../../../core/utils/formatters.dart';
+import '../../../../core/config/theme_config.dart';
 import '../../../contributions/presentation/pages/add_contribution_page.dart';
 import '../../../contributions/presentation/pages/edit_contribution_page.dart';
+
+enum ContributionSortCriteria {
+  amount,
+  date,
+  person,
+}
 
 class ContributionsTab extends ConsumerStatefulWidget {
   const ContributionsTab({super.key});
@@ -19,12 +27,16 @@ class ContributionsTab extends ConsumerStatefulWidget {
 
 class _ContributionsTabState extends ConsumerState<ContributionsTab> {
   String? _selectedMemberId;
+  ContributionSortCriteria _sortCriteria = ContributionSortCriteria.amount;
+  bool _sortAscending = false;
 
   @override
   Widget build(BuildContext context) {
     final householdAsync = ref.watch(currentHouseholdProvider);
     final membersAsync = ref.watch(householdMembersProvider);
     final contributionsAsync = ref.watch(contributionsProvider);
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -33,13 +45,21 @@ class _ContributionsTabState extends ConsumerState<ContributionsTab> {
           SliverAppBar(
             floating: true,
             snap: true,
+            systemOverlayStyle: SystemUiOverlayStyle(
+              statusBarColor: Colors.transparent,
+              statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+            ),
             title: const Text('Ingresos'),
-            backgroundColor: Theme.of(context).colorScheme.surface,
             actions: [
               IconButton(
                 icon: const Icon(Icons.info_outline),
                 onPressed: () => _showInfo(context),
                 tooltip: 'Información',
+              ),
+              IconButton(
+                icon: const Icon(Icons.sort),
+                onPressed: () => _showSortDialog(context),
+                tooltip: 'Ordenar',
               ),
             ],
           ),
@@ -67,8 +87,8 @@ class _ContributionsTabState extends ConsumerState<ContributionsTab> {
                       .where((c) => c.by == _selectedMemberId)
                       .toList();
 
-              // Ordenar por monto de mayor a menor
-              filteredContributions.sort((a, b) => b.amount.compareTo(a.amount));
+              // Ordenar según criterio seleccionado
+              _sortContributions(filteredContributions);
 
               // Group by date
               final groupedContributions = <String, List<Contribution>>{};
@@ -84,8 +104,7 @@ class _ContributionsTabState extends ConsumerState<ContributionsTab> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.savings,
-                            size: 64, color: Colors.grey[400]),
+                        Icon(Icons.account_balance_wallet, size: 64, color: Colors.grey),
                         const SizedBox(height: 16),
                         Text(
                           _selectedMemberId == null
@@ -305,15 +324,40 @@ class _ContributionsTabState extends ConsumerState<ContributionsTab> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        icon: Icon(
+          Icons.warning_rounded,
+          color: Colors.orange.shade600,
+          size: 48,
+        ),
         title: const Text('Eliminar aportación'),
-        content: Text('¿Eliminar "$description"?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '¿Estás seguro de eliminar "$description"?',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Esta acción no se puede deshacer.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancelar'),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: context.appPalette.danger,
+            ),
             child: const Text('Eliminar'),
           ),
         ],
@@ -343,17 +387,8 @@ class _ContributionsTabState extends ConsumerState<ContributionsTab> {
     }
   }
 
-  void _editContribution(BuildContext context, Contribution contribution) async {
-    final result = await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => EditContributionPage(contribution: contribution),
-      ),
-    );
-
-    // Refresh if edited successfully
-    if (result == true && mounted) {
-      ref.invalidate(contributionsProvider);
-    }
+  void _editContribution(BuildContext context, Contribution contribution) {
+    showEditContributionSheet(context, ref, contribution);
   }
 
   void _navigateToAddContribution(BuildContext context) {
@@ -376,6 +411,129 @@ class _ContributionsTabState extends ConsumerState<ContributionsTab> {
           ),
         ],
       ),
+    );
+  }
+
+  void _sortContributions(List<Contribution> contributions) {
+    switch (_sortCriteria) {
+      case ContributionSortCriteria.amount:
+        contributions.sort((a, b) => _sortAscending
+            ? a.amount.compareTo(b.amount)
+            : b.amount.compareTo(a.amount));
+        break;
+      case ContributionSortCriteria.date:
+        contributions.sort((a, b) => _sortAscending
+            ? a.date.compareTo(b.date)
+            : b.date.compareTo(a.date));
+        break;
+      case ContributionSortCriteria.person:
+        contributions.sort((a, b) => _sortAscending
+            ? (a.byDisplayName ?? '').compareTo(b.byDisplayName ?? '')
+            : (b.byDisplayName ?? '').compareTo(a.byDisplayName ?? ''));
+        break;
+    }
+  }
+
+  void _showSortDialog(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle bar
+            Container(
+              margin: const EdgeInsets.only(bottom: 20),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            
+            // Título
+            const Text(
+              'Ordenar ingresos',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 20),
+            
+            // Opciones de ordenamiento
+            _buildSortOption(Icons.attach_money, 'Monto', ContributionSortCriteria.amount),
+            _buildSortOption(Icons.calendar_today, 'Fecha', ContributionSortCriteria.date),
+            _buildSortOption(Icons.person, 'Persona', ContributionSortCriteria.person),
+            
+            const SizedBox(height: 20),
+            const Divider(),
+            const SizedBox(height: 12),
+            
+            // Toggle Ascendente/Descendente
+            Row(
+              children: [
+                const Icon(Icons.swap_vert, size: 20),
+                const SizedBox(width: 12),
+                const Text('Orden:', style: TextStyle(fontWeight: FontWeight.w500)),
+                const Spacer(),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('Desc')),
+                    ButtonSegment(value: true, label: Text('Asc')),
+                  ],
+                  selected: {_sortAscending},
+                  onSelectionChanged: (Set<bool> selection) {
+                    setState(() {
+                      _sortAscending = selection.first;
+                    });
+                  },
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 20),
+            
+            // Botón cerrar
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Aplicar'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSortOption(IconData icon, String label, ContributionSortCriteria criteria) {
+    final isSelected = _sortCriteria == criteria;
+    final palette = context.appPalette;
+    
+    return ListTile(
+      leading: Icon(icon, color: isSelected ? palette.secondary : null),
+      title: Text(
+        label,
+        style: TextStyle(
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          color: isSelected ? palette.secondary : null,
+        ),
+      ),
+      trailing: isSelected ? Icon(Icons.check, color: palette.secondary) : null,
+      onTap: () {
+        setState(() {
+          _sortCriteria = criteria;
+        });
+      },
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/providers/category_provider.dart';
 import '../../../../core/providers/household_provider.dart';
@@ -7,6 +8,7 @@ import '../../../../core/services/firestore_service.dart';
 import '../../../../core/models/category.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/validators.dart';
+import '../../../../core/config/theme_config.dart';
 
 class CategoriesTab extends ConsumerStatefulWidget {
   const CategoriesTab({super.key});
@@ -31,9 +33,14 @@ class _CategoriesTabState extends ConsumerState<CategoriesTab> {
   Widget build(BuildContext context) {
     final categoriesAsync = ref.watch(categoriesProvider);
     final sortPrefsAsync = ref.watch(sortPreferencesProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        ),
         title: _isSearching
             ? TextField(
                 controller: _searchController,
@@ -237,131 +244,156 @@ class _CategoriesTabState extends ConsumerState<CategoriesTab> {
     final sortPrefs = ref.read(sortPreferencesProvider).value;
     if (sortPrefs == null) return;
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     CategorySortBy tempSortBy = sortPrefs.sortBy;
     SortDirection tempSortDirection = sortPrefs.sortDirection;
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Ordenar por'),
-        content: StatefulBuilder(
-          builder: (context, setDialogState) {
-            return Column(
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Handle bar
+                Container(
+                  margin: const EdgeInsets.only(bottom: 20),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                
+                // Título
                 const Text(
-                  'Criterio',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  'Ordenar categorías',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 8),
-                RadioListTile<CategorySortBy>(
-                  title: const Text('Alfabético'),
-                  value: CategorySortBy.alphabetical,
-                  groupValue: tempSortBy,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      tempSortBy = value!;
-                    });
-                  },
+                const SizedBox(height: 20),
+                
+                // Opciones de ordenamiento
+                _buildSortOption(
+                  Icons.sort_by_alpha, 
+                  'Alfabético', 
+                  CategorySortBy.alphabetical,
+                  tempSortBy,
+                  (value) => setDialogState(() => tempSortBy = value),
                 ),
-                RadioListTile<CategorySortBy>(
-                  title: const Text('Fecha de creación'),
-                  value: CategorySortBy.recentlyAdded,
-                  groupValue: tempSortBy,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      tempSortBy = value!;
-                    });
-                  },
+                _buildSortOption(
+                  Icons.calendar_today, 
+                  'Fecha de creación', 
+                  CategorySortBy.recentlyAdded,
+                  tempSortBy,
+                  (value) => setDialogState(() => tempSortBy = value),
                 ),
-                RadioListTile<CategorySortBy>(
-                  title: const Text('Monto gastado'),
-                  value: CategorySortBy.amount,
-                  groupValue: tempSortBy,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      tempSortBy = value!;
-                    });
-                  },
+                _buildSortOption(
+                  Icons.shopping_cart, 
+                  'Monto gastado', 
+                  CategorySortBy.amount,
+                  tempSortBy,
+                  (value) => setDialogState(() => tempSortBy = value),
                 ),
-                RadioListTile<CategorySortBy>(
-                  title: const Text('Límite mensual'),
-                  value: CategorySortBy.monthlyLimit,
-                  groupValue: tempSortBy,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      tempSortBy = value!;
-                    });
-                  },
+                _buildSortOption(
+                  Icons.account_balance_wallet, 
+                  'Límite mensual', 
+                  CategorySortBy.monthlyLimit,
+                  tempSortBy,
+                  (value) => setDialogState(() => tempSortBy = value),
                 ),
-                const Divider(height: 24),
-                const Text(
-                  'Dirección',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                const SizedBox(height: 8),
+                
+                const SizedBox(height: 20),
+                const Divider(),
+                const SizedBox(height: 12),
+                
+                // Toggle Ascendente/Descendente
                 Row(
                   children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          setDialogState(() {
-                            tempSortDirection = SortDirection.ascending;
-                          });
-                        },
-                        icon: const Icon(Icons.arrow_upward),
-                        label: const Text('Ascendente'),
-                        style: OutlinedButton.styleFrom(
-                          backgroundColor: tempSortDirection == SortDirection.ascending
-                              ? Theme.of(context).colorScheme.primaryContainer
-                              : null,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          setDialogState(() {
-                            tempSortDirection = SortDirection.descending;
-                          });
-                        },
-                        icon: const Icon(Icons.arrow_downward),
-                        label: const Text('Descendente'),
-                        style: OutlinedButton.styleFrom(
-                          backgroundColor: tempSortDirection == SortDirection.descending
-                              ? Theme.of(context).colorScheme.primaryContainer
-                              : null,
-                        ),
-                      ),
+                    const Icon(Icons.swap_vert, size: 20),
+                    const SizedBox(width: 12),
+                    const Text('Orden:', style: TextStyle(fontWeight: FontWeight.w500)),
+                    const Spacer(),
+                    SegmentedButton<SortDirection>(
+                      segments: const [
+                        ButtonSegment(value: SortDirection.descending, label: Text('Desc')),
+                        ButtonSegment(value: SortDirection.ascending, label: Text('Asc')),
+                      ],
+                      selected: {tempSortDirection},
+                      onSelectionChanged: (Set<SortDirection> selection) {
+                        setDialogState(() {
+                          tempSortDirection = selection.first;
+                        });
+                      },
                     ),
                   ],
                 ),
+                
+                const SizedBox(height: 20),
+                
+                // Botón aplicar
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () async {
+                      try {
+                        // Guardar en Firestore
+                        await ref.read(sortPreferencesNotifierProvider)
+                            .updateSortPreferences(tempSortBy, tempSortDirection);
+                        
+                        print('✅ [CategoriesTab] Preferencias guardadas: ${tempSortBy.name} (${tempSortDirection.name})');
+                        
+                        if (!context.mounted) return;
+                        Navigator.pop(context);
+                      } catch (e) {
+                        print('❌ [CategoriesTab] Error al guardar preferencias: $e');
+                        if (!context.mounted) return;
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Error al guardar preferencias: $e')),
+                        );
+                      }
+                    },
+                    child: const Text('Aplicar'),
+                  ),
+                ),
               ],
-            );
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              // Guardar en Firestore
-              await ref.read(sortPreferencesNotifierProvider)
-                  .updateSortPreferences(tempSortBy, tempSortDirection);
-              
-              print('✅ [CategoriesTab] Preferencias guardadas: ${tempSortBy.name} (${tempSortDirection.name})');
-              
-              if (!context.mounted) return;
-              Navigator.pop(context);
-            },
-            child: const Text('Aplicar'),
-          ),
-        ],
+            ),
+          );
+        },
       ),
+    );
+  }
+
+  Widget _buildSortOption(
+    IconData icon, 
+    String label, 
+    CategorySortBy criteria,
+    CategorySortBy currentCriteria,
+    Function(CategorySortBy) onTap,
+  ) {
+    final isSelected = currentCriteria == criteria;
+    final palette = context.appPalette;
+    
+    return ListTile(
+      leading: Icon(icon, color: isSelected ? palette.secondary : null),
+      title: Text(
+        label,
+        style: TextStyle(
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          color: isSelected ? palette.secondary : null,
+        ),
+      ),
+      trailing: isSelected ? Icon(Icons.check, color: palette.secondary) : null,
+      onTap: () => onTap(criteria),
     );
   }
 
@@ -670,194 +702,20 @@ class _CategoriesTabState extends ConsumerState<CategoriesTab> {
   }
 
   Future<void> _showAddCategoryDialog(BuildContext context) async {
-    final formKey = GlobalKey<FormState>();
-    final nameController = TextEditingController();
-    final limitController = TextEditingController();
-    final iconController = TextEditingController();
-
-    return showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Nueva Categoría'),
-          content: Form(
-            key: formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Nombre',
-                      hintText: 'Ej: Renta, Servicios, Comida',
-                    ),
-                    validator: (value) => Validators.required(value, fieldName: 'El nombre'),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: limitController,
-                    decoration: const InputDecoration(
-                      labelText: 'Presupuesto mensual',
-                      hintText: 'Ej: 5000',
-                      prefixText: '\$ ',
-                      helperText: 'Monto que se destina a esta categoría cada mes',
-                    ),
-                    keyboardType: TextInputType.number,
-                    validator: Validators.amount,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: iconController,
-                    decoration: const InputDecoration(
-                      labelText: 'Emoji (opcional)',
-                      hintText: 'Ej: 🏠 🚗 🎉',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                if (formKey.currentState!.validate()) {
-                  final householdId = ref.read(currentHouseholdIdProvider);
-                  if (householdId == null) return;
-
-                  try {
-                    await ref.read(firestoreServiceProvider).createCategory(
-                          householdId: householdId,
-                          name: nameController.text.trim(),
-                          monthlyLimit: double.parse(limitController.text),
-                          icon: iconController.text.trim().isEmpty
-                              ? null
-                              : iconController.text.trim(),
-                        );
-
-                    if (context.mounted) {
-                      Navigator.of(context).pop();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Categoría creada')),
-                      );
-                    }
-                  } catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error: ${e.toString()}')),
-                      );
-                    }
-                  }
-                }
-              },
-              child: const Text('Crear'),
-            ),
-          ],
-        );
-      },
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _AddCategorySheet(ref: ref),
     );
   }
 
   Future<void> _showEditCategoryDialog(BuildContext context, Category category) async {
-    final formKey = GlobalKey<FormState>();
-    final nameController = TextEditingController(text: category.name);
-    final limitController = TextEditingController(text: category.monthlyLimit.toString());
-    final iconController = TextEditingController(text: category.icon ?? '');
-
-    return showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Editar Categoría'),
-          content: Form(
-            key: formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Nombre',
-                      hintText: 'Ej: Renta, Servicios, Comida',
-                    ),
-                    validator: (value) => Validators.required(value, fieldName: 'El nombre'),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: limitController,
-                    decoration: const InputDecoration(
-                      labelText: 'Presupuesto mensual',
-                      hintText: 'Ej: 5000',
-                      prefixText: '\$ ',
-                      helperText: 'Monto que se destina a esta categoría cada mes',
-                    ),
-                    keyboardType: TextInputType.number,
-                    validator: Validators.amount,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: iconController,
-                    decoration: const InputDecoration(
-                      labelText: 'Emoji (opcional)',
-                      hintText: 'Ej: 🏠 🚗 🎉',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                if (formKey.currentState!.validate()) {
-                  final householdId = ref.read(currentHouseholdIdProvider);
-                  if (householdId == null) return;
-
-                  try {
-                    final updateData = {
-                      'name': nameController.text.trim(),
-                      'monthlyLimit': double.parse(limitController.text),
-                      'icon': iconController.text.trim().isEmpty
-                          ? null
-                          : iconController.text.trim(),
-                      'updatedAt': DateTime.now().toIso8601String(),
-                    };
-                    
-                    await ref.read(firestoreServiceProvider).updateCategory(
-                          householdId,
-                          category.id,
-                          updateData,
-                        );
-
-                    if (context.mounted) {
-                      Navigator.of(context).pop();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Categoría actualizada')),
-                      );
-                    }
-                  } catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error: ${e.toString()}')),
-                      );
-                    }
-                  }
-                }
-              },
-              child: const Text('Guardar'),
-            ),
-          ],
-        );
-      },
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _EditCategorySheet(ref: ref, category: category),
     );
   }
 
@@ -870,16 +728,40 @@ class _CategoriesTabState extends ConsumerState<CategoriesTab> {
       context: context,
       builder: (context) {
         return AlertDialog(
+          icon: Icon(
+            Icons.warning_rounded,
+            color: Colors.orange.shade600,
+            size: 48,
+          ),
           title: const Text('Eliminar Categoría'),
-          content: Text('¿Estás seguro de eliminar "$categoryName"?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '¿Estás seguro de eliminar "$categoryName"?',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Esta acción no se puede deshacer.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
               child: const Text('Cancelar'),
             ),
-            ElevatedButton(
+            FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red.shade600,
+              ),
               child: const Text('Eliminar'),
             ),
           ],
@@ -910,5 +792,871 @@ class _CategoriesTabState extends ConsumerState<CategoriesTab> {
         }
       }
     }
+  }
+}
+
+// BottomSheet para agregar categoría
+class _AddCategorySheet extends StatefulWidget {
+  final WidgetRef ref;
+
+  const _AddCategorySheet({required this.ref});
+
+  @override
+  State<_AddCategorySheet> createState() => _AddCategorySheetState();
+}
+
+class _AddCategorySheetState extends State<_AddCategorySheet> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _limitController = TextEditingController();
+  final _iconController = TextEditingController();
+  bool _isLoading = false;
+  double? _previewAmount;
+
+  @override
+  void initState() {
+    super.initState();
+    _limitController.addListener(() {
+      final text = _limitController.text;
+      setState(() {
+        _previewAmount = text.isNotEmpty ? double.tryParse(text) : null;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _limitController.dispose();
+    _iconController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _createCategory() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final householdId = widget.ref.read(currentHouseholdIdProvider);
+      if (householdId == null) throw Exception('Sesión inválida');
+
+      await widget.ref.read(firestoreServiceProvider).createCategory(
+            householdId: householdId,
+            name: _nameController.text.trim(),
+            monthlyLimit: double.parse(_limitController.text),
+            icon: _iconController.text.trim().isEmpty
+                ? null
+                : _iconController.text.trim(),
+          );
+
+      if (!mounted) return;
+
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 12),
+              Text('Categoría creada'),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(child: Text('Error: ${e.toString()}')),
+            ],
+          ),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Color _parseColor(String? colorHex) {
+    if (colorHex == null || colorHex.isEmpty) return Colors.grey;
+    try {
+      return Color(int.parse(colorHex.replaceFirst('#', '0xFF')));
+    } catch (e) {
+      return Colors.grey;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+
+    return AnimatedPadding(
+      padding: EdgeInsets.only(bottom: keyboardHeight),
+      duration: const Duration(milliseconds: 100),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle bar
+            Container(
+              margin: const EdgeInsets.only(top: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+
+            // Content
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Header
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: context.appPalette.tertiary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Icon(
+                              Icons.category,
+                              size: 32,
+                              color: context.appPalette.tertiary,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Nueva Categoría',
+                                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                ),
+                                Text(
+                                  'Crea una categoría de gasto',
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        color: Colors.grey.shade600,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 32),
+
+                      // Preview card
+                      if (_previewAmount != null && _iconController.text.isNotEmpty && _nameController.text.isNotEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(20),
+                          margin: const EdgeInsets.only(bottom: 24),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Theme.of(context).colorScheme.primaryContainer,
+                                Theme.of(context).colorScheme.primaryContainer.withOpacity(0.7),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                              width: 2,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Text(
+                                _iconController.text,
+                                style: const TextStyle(fontSize: 48),
+                              ),
+                              const SizedBox(width: 20),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _nameController.text,
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Presupuesto: ${CurrencyFormatter.format(_previewAmount!)}',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      // Emoji field
+                      TextFormField(
+                        controller: _iconController,
+                        decoration: InputDecoration(
+                          labelText: 'Emoji',
+                          hintText: '🏠 🚗 🍔 🎉',
+                          prefixIcon: const Icon(Icons.emoji_emotions),
+                          filled: true,
+                          fillColor: isDark
+                              ? Colors.grey.shade900
+                              : Colors.grey.shade50,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(
+                              color: isDark
+                                  ? Colors.grey.shade800
+                                  : Colors.grey.shade200,
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        style: const TextStyle(fontSize: 24),
+                        textAlign: TextAlign.center,
+                        enabled: !_isLoading,
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Name field
+                      TextFormField(
+                        controller: _nameController,
+                        decoration: InputDecoration(
+                          labelText: 'Nombre',
+                          hintText: 'Ej: Renta, Servicios, Comida',
+                          prefixIcon: const Icon(Icons.label),
+                          filled: true,
+                          fillColor: isDark
+                              ? Colors.grey.shade900
+                              : Colors.grey.shade50,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(
+                              color: isDark
+                                  ? Colors.grey.shade800
+                                  : Colors.grey.shade200,
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        textCapitalization: TextCapitalization.words,
+                        validator: (value) => Validators.required(value, fieldName: 'El nombre'),
+                        enabled: !_isLoading,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Budget field
+                      TextFormField(
+                        controller: _limitController,
+                        decoration: InputDecoration(
+                          labelText: 'Presupuesto mensual',
+                          hintText: '5000',
+                          prefixIcon: Icon(
+                            Icons.attach_money,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          helperText: 'Monto mensual para esta categoría',
+                          filled: true,
+                          fillColor: isDark
+                              ? Colors.grey.shade900
+                              : Colors.grey.shade50,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(
+                              color: isDark
+                                  ? Colors.grey.shade800
+                                  : Colors.grey.shade200,
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        keyboardType: TextInputType.number,
+                        validator: Validators.amount,
+                        enabled: !_isLoading,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+
+                      const SizedBox(height: 32),
+
+                      // Botones
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: _isLoading
+                                  ? null
+                                  : () => Navigator.of(context).pop(),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text('Cancelar'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: FilledButton(
+                              onPressed: _isLoading ? null : _createCategory,
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: _isLoading
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.check, size: 20),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          'Crear Categoría',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      // Espacio para el teclado
+                      SizedBox(height: MediaQuery.of(context).padding.bottom),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// BottomSheet para editar categoría
+class _EditCategorySheet extends StatefulWidget {
+  final WidgetRef ref;
+  final Category category;
+
+  const _EditCategorySheet({
+    required this.ref,
+    required this.category,
+  });
+
+  @override
+  State<_EditCategorySheet> createState() => _EditCategorySheetState();
+}
+
+class _EditCategorySheetState extends State<_EditCategorySheet> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _limitController;
+  late final TextEditingController _iconController;
+  final _formKey = GlobalKey<FormState>();
+  bool _isLoading = false;
+  double? _previewAmount;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.category.name);
+    _limitController = TextEditingController(
+      text: widget.category.monthlyLimit.toString(),
+    );
+    _iconController = TextEditingController(text: widget.category.icon ?? '');
+    _previewAmount = widget.category.monthlyLimit;
+
+    _limitController.addListener(() {
+      final text = _limitController.text;
+      setState(() {
+        _previewAmount = text.isNotEmpty ? double.tryParse(text) : null;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _limitController.dispose();
+    _iconController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _updateCategory() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final householdId = widget.ref.read(currentHouseholdIdProvider);
+      if (householdId == null) throw Exception('Sesión inválida');
+
+      final updateData = {
+        'name': _nameController.text.trim(),
+        'monthlyLimit': double.parse(_limitController.text),
+        'icon': _iconController.text.trim().isEmpty
+            ? null
+            : _iconController.text.trim(),
+        'updatedAt': DateTime.now().toIso8601String(),
+      };
+
+      await widget.ref.read(firestoreServiceProvider).updateCategory(
+            householdId,
+            widget.category.id,
+            updateData,
+          );
+
+      if (!mounted) return;
+
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 12),
+              Text('Categoría actualizada'),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(child: Text('Error: ${e.toString()}')),
+            ],
+          ),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Color _parseColor(String? colorHex) {
+    if (colorHex == null || colorHex.isEmpty) return Colors.grey;
+    try {
+      return Color(int.parse(colorHex.replaceFirst('#', '0xFF')));
+    } catch (e) {
+      return Colors.grey;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+
+    return AnimatedPadding(
+      padding: EdgeInsets.only(bottom: keyboardHeight),
+      duration: const Duration(milliseconds: 100),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle bar
+            Container(
+              margin: const EdgeInsets.only(top: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+
+            // Content
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Header
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: _parseColor(widget.category.color).withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Text(
+                              widget.category.icon ?? '📁',
+                              style: const TextStyle(fontSize: 32),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Editar Categoría',
+                                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                ),
+                                Text(
+                                  'Modifica los datos de la categoría',
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        color: Colors.grey.shade600,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 32),
+
+                      // Preview card
+                      if (_previewAmount != null && _iconController.text.isNotEmpty && _nameController.text.isNotEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(20),
+                          margin: const EdgeInsets.only(bottom: 24),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                _parseColor(widget.category.color).withOpacity(0.2),
+                                _parseColor(widget.category.color).withOpacity(0.1),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: _parseColor(widget.category.color).withOpacity(0.3),
+                              width: 2,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Text(
+                                _iconController.text,
+                                style: const TextStyle(fontSize: 48),
+                              ),
+                              const SizedBox(width: 20),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _nameController.text,
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Presupuesto: ${CurrencyFormatter.format(_previewAmount!)}',
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      // Emoji field
+                      TextFormField(
+                        controller: _iconController,
+                        decoration: InputDecoration(
+                          labelText: 'Emoji',
+                          hintText: '🏠 🚗 🍔 🎉',
+                          prefixIcon: const Icon(Icons.emoji_emotions),
+                          filled: true,
+                          fillColor: isDark
+                              ? Colors.grey.shade900
+                              : Colors.grey.shade50,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(
+                              color: isDark
+                                  ? Colors.grey.shade800
+                                  : Colors.grey.shade200,
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(
+                              color: _parseColor(widget.category.color),
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        style: const TextStyle(fontSize: 24),
+                        textAlign: TextAlign.center,
+                        enabled: !_isLoading,
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Name field
+                      TextFormField(
+                        controller: _nameController,
+                        decoration: InputDecoration(
+                          labelText: 'Nombre',
+                          hintText: 'Ej: Renta, Servicios, Comida',
+                          prefixIcon: const Icon(Icons.label),
+                          filled: true,
+                          fillColor: isDark
+                              ? Colors.grey.shade900
+                              : Colors.grey.shade50,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(
+                              color: isDark
+                                  ? Colors.grey.shade800
+                                  : Colors.grey.shade200,
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(
+                              color: _parseColor(widget.category.color),
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        textCapitalization: TextCapitalization.words,
+                        validator: (value) => Validators.required(value, fieldName: 'El nombre'),
+                        enabled: !_isLoading,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Budget field
+                      TextFormField(
+                        controller: _limitController,
+                        decoration: InputDecoration(
+                          labelText: 'Presupuesto mensual',
+                          hintText: '5000',
+                          prefixIcon: Icon(
+                            Icons.attach_money,
+                            color: _parseColor(widget.category.color),
+                          ),
+                          helperText: 'Monto mensual para esta categoría',
+                          filled: true,
+                          fillColor: isDark
+                              ? Colors.grey.shade900
+                              : Colors.grey.shade50,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(
+                              color: isDark
+                                  ? Colors.grey.shade800
+                                  : Colors.grey.shade200,
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(
+                              color: _parseColor(widget.category.color),
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        keyboardType: TextInputType.number,
+                        validator: Validators.amount,
+                        enabled: !_isLoading,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+
+                      const SizedBox(height: 32),
+
+                      // Botones
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: _isLoading
+                                  ? null
+                                  : () => Navigator.of(context).pop(),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text('Cancelar'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: FilledButton(
+                              onPressed: _isLoading ? null : _updateCategory,
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                backgroundColor: _parseColor(widget.category.color),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: _isLoading
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.check, size: 20),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          'Guardar Cambios',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      // Espacio para el teclado
+                      SizedBox(height: MediaQuery.of(context).padding.bottom),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

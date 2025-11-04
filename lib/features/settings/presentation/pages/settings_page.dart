@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -6,6 +7,8 @@ import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/firestore_service.dart';
 import '../../../../core/services/migration_service.dart';
 import '../../../../core/config/theme_config.dart';
+import '../../../../core/config/app_colors.dart';
+import '../../../../core/config/app_palettes.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/providers/household_provider.dart';
 import '../../../../core/providers/member_provider.dart';
@@ -22,11 +25,17 @@ class SettingsPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
-    final colorScheme = ref.watch(colorSchemeProvider);
+    final paletteId = ref.watch(appPaletteProvider);
+    final palette = AppPalettes.getPalette(paletteId);
     final user = ref.watch(currentUserProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        ),
         title: const Text('Configuración'),
       ),
       body: ListView(
@@ -73,10 +82,11 @@ class SettingsPage extends ConsumerWidget {
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text(
-              'Perfil',
+              '👤 PERFIL',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
-                fontSize: 16,
+                fontSize: 14,
+                letterSpacing: 0.5,
               ),
             ),
           ),
@@ -85,14 +95,14 @@ class SettingsPage extends ConsumerWidget {
             child: Column(
               children: [
                 ListTile(
-                  leading: const Icon(Icons.person),
+                  leading: const Text('✏️', style: TextStyle(fontSize: 24)),
                   title: const Text('Editar nombre'),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                   onTap: () => _showEditNameDialog(context, ref),
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.attach_money),
+                  leading: const Text('💰', style: TextStyle(fontSize: 24)),
                   title: const Text('Salario mensual'),
                   subtitle: const Text('Configure su salario para calcular aportes'),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
@@ -101,7 +111,7 @@ class SettingsPage extends ConsumerWidget {
                 if (user != null && !_isGoogleLinked(user)) ...[
                   const Divider(height: 1),
                   ListTile(
-                    leading: const Icon(Icons.link),
+                    leading: const Text('🔗', style: TextStyle(fontSize: 24)),
                     title: const Text('Vincular con Google'),
                     subtitle: const Text('Inicia sesión también con tu cuenta de Google'),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 16),
@@ -116,10 +126,11 @@ class SettingsPage extends ConsumerWidget {
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text(
-              'Casa',
+              '🏠 MI CASA',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
-                fontSize: 16,
+                fontSize: 14,
+                letterSpacing: 0.5,
               ),
             ),
           ),
@@ -128,7 +139,7 @@ class SettingsPage extends ConsumerWidget {
             child: Column(
               children: [
                 ListTile(
-                  leading: const Icon(Icons.home),
+                  leading: const Text('🏡', style: TextStyle(fontSize: 24)),
                   title: const Text('Nombre de la casa'),
                   subtitle: const Text('Cambiar nombre del household'),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
@@ -136,7 +147,7 @@ class SettingsPage extends ConsumerWidget {
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.people),
+                  leading: const Text('👥', style: TextStyle(fontSize: 24)),
                   title: const Text('Miembros'),
                   subtitle: const Text('Gestionar quién está en la casa'),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
@@ -148,7 +159,7 @@ class SettingsPage extends ConsumerWidget {
                     final householdAsync = ref.watch(currentHouseholdProvider);
                     return householdAsync.when(
                       data: (household) => ListTile(
-                        leading: const Icon(Icons.savings),
+                        leading: const Text('🎯', style: TextStyle(fontSize: 24)),
                         title: const Text('Meta mensual'),
                         subtitle: Text(
                           'Se calcula automáticamente: ${CurrencyFormatter.format(household?.monthTarget ?? 0)}',
@@ -159,37 +170,63 @@ class SettingsPage extends ConsumerWidget {
                           child: Icon(Icons.info_outline),
                         ),
                       ),
-                      loading: () => const ListTile(
-                        leading: Icon(Icons.savings),
-                        title: Text('Meta mensual'),
-                        subtitle: Text('Cargando...'),
+                      loading: () => ListTile(
+                        leading: const Text('🎯', style: TextStyle(fontSize: 24)),
+                        title: const Text('Meta mensual'),
+                        subtitle: const Text('Cargando...'),
                       ),
                       error: (_, __) => const SizedBox.shrink(),
                     );
                   },
                 ),
+              ],
+            ),
+          ),
+
+          // Appearance
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              '🎨 APARIENCIA',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Text('🌓', style: TextStyle(fontSize: 24)),
+                  title: const Text('Tema'),
+                  subtitle: Text(_getThemeModeText(themeMode)),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  onTap: () => _showThemeModeDialog(context, ref),
+                ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.delete_forever, color: Colors.red),
-                  title: const Text(
-                    'Eliminar casa',
-                    style: TextStyle(color: Colors.red),
-                  ),
-                  subtitle: const Text('Borrar todo y empezar de nuevo'),
-                  onTap: () => _deleteHousehold(context, ref),
+                  leading: const Text('🎨', style: TextStyle(fontSize: 24)),
+                  title: const Text('Paleta de colores'),
+                  subtitle: Text(_getPaletteText(paletteId)),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  onTap: () => _showPaletteDialog(context, ref),
                 ),
               ],
             ),
           ),
 
-          // App Updates
+          // App Info
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text(
-              'Actualización',
+              '📱 APLICACIÓN',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
-                fontSize: 16,
+                fontSize: 14,
+                letterSpacing: 0.5,
               ),
             ),
           ),
@@ -199,122 +236,116 @@ class SettingsPage extends ConsumerWidget {
               builder: (context, ref, child) {
                 final updateState = ref.watch(updateNotifierProvider);
                 
-                return ListTile(
-                  leading: Icon(
-                    Icons.system_update,
-                    color: updateState.hasUpdateAvailable 
-                      ? Colors.orange
-                      : Theme.of(context).colorScheme.primary,
-                  ),
-                  title: const Text('Buscar actualizaciones'),
-                  subtitle: updateState.hasUpdateAvailable
-                      ? Text(
-                          '¡Nueva versión ${updateState.availableUpdate!.version} disponible!',
-                          style: const TextStyle(
-                            color: Colors.orange,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        )
-                      : FutureBuilder<PackageInfo>(
-                          future: PackageInfo.fromPlatform(),
-                          builder: (context, snapshot) {
-                            if (snapshot.hasData) {
-                              return Text('Versión actual: ${snapshot.data!.version}');
-                            }
-                            return const Text('Versión actual: 1.0.0');
-                          },
-                        ),
-                  trailing: updateState.isChecking
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(
-                          updateState.hasUpdateAvailable
-                              ? Icons.arrow_forward_ios
-                              : Icons.refresh,
-                          size: updateState.hasUpdateAvailable ? 16 : 24,
-                        ),
-                  onTap: updateState.isChecking
-                      ? null
-                      : () {
-                          if (updateState.hasUpdateAvailable) {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) => const UpdateDetailsPage(),
+                return Column(
+                  children: [
+                    ListTile(
+                      leading: Text(
+                        updateState.hasUpdateAvailable ? '🔄' : '✅',
+                        style: const TextStyle(fontSize: 24),
+                      ),
+                      title: const Text('Buscar actualizaciones'),
+                      subtitle: updateState.hasUpdateAvailable
+                          ? Text(
+                              '¡Nueva versión ${updateState.availableUpdate!.version} disponible!',
+                              style: const TextStyle(
+                                color: Colors.orange,
+                                fontWeight: FontWeight.bold,
                               ),
-                            );
-                          } else {
-                            ref.read(updateNotifierProvider.notifier)
-                                .checkForUpdates(forceCheck: true);
-                          }
+                            )
+                          : FutureBuilder<PackageInfo>(
+                              future: PackageInfo.fromPlatform(),
+                              builder: (context, snapshot) {
+                                if (snapshot.hasData) {
+                                  return Text('Versión actual: ${snapshot.data!.version}');
+                                }
+                                return const Text('Versión actual: 1.0.0');
+                              },
+                            ),
+                      trailing: updateState.isChecking
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              updateState.hasUpdateAvailable
+                                  ? Icons.arrow_forward_ios
+                                  : Icons.refresh,
+                              size: updateState.hasUpdateAvailable ? 16 : 24,
+                            ),
+                      onTap: updateState.isChecking
+                          ? null
+                          : () {
+                              if (updateState.hasUpdateAvailable) {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) => const UpdateDetailsPage(),
+                                  ),
+                                );
+                              } else {
+                                ref.read(updateNotifierProvider.notifier)
+                                    .checkForUpdates(forceCheck: true);
+                              }
+                            },
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Text('ℹ️', style: TextStyle(fontSize: 24)),
+                      title: FutureBuilder<PackageInfo>(
+                        future: PackageInfo.fromPlatform(),
+                        builder: (context, snapshot) {
+                          final version = snapshot.hasData ? snapshot.data!.version : '...';
+                          return Text('Versión $version');
                         },
+                      ),
+                      subtitle: const Text('App Gestión Gastos'),
+                    ),
+                  ],
                 );
               },
             ),
           ),
 
-          // Appearance
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              'Apariencia',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
-            ),
-          ),
-          Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.dark_mode),
-                  title: const Text('Tema'),
-                  subtitle: Text(_getThemeModeText(themeMode)),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                  onTap: () => _showThemeModeDialog(context, ref),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.palette),
-                  title: const Text('Color'),
-                  subtitle: Text(_getColorSchemeText(colorScheme)),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                  onTap: () => _showColorSchemeDialog(context, ref),
-                ),
-              ],
-            ),
-          ),
-
-          // Account
+          // Danger Zone
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
             child: Text(
-              'Cuenta',
+              '⚠️ ZONA PELIGROSA',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
-                fontSize: 16,
+                fontSize: 14,
+                letterSpacing: 0.5,
+                color: Colors.red,
               ),
             ),
           ),
           Card(
             margin: const EdgeInsets.symmetric(horizontal: 16),
+            color: Colors.red.withOpacity(0.05),
             child: Column(
               children: [
                 ListTile(
-                  leading: const Icon(Icons.logout, color: Colors.red),
+                  leading: const Text('🚪', style: TextStyle(fontSize: 24)),
                   title: const Text(
                     'Cerrar sesión',
                     style: TextStyle(color: Colors.red),
                   ),
+                  subtitle: const Text('Salir de tu cuenta'),
                   onTap: () => _signOut(context, ref),
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.delete_forever, color: Colors.red),
+                  leading: const Text('🗑️', style: TextStyle(fontSize: 24)),
+                  title: const Text(
+                    'Eliminar casa',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                  subtitle: const Text('Borrar todo y empezar de nuevo'),
+                  onTap: () => _deleteHousehold(context, ref),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Text('❌', style: TextStyle(fontSize: 24)),
                   title: const Text(
                     'Eliminar cuenta',
                     style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
@@ -326,22 +357,7 @@ class SettingsPage extends ConsumerWidget {
             ),
           ),
 
-          // Version
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Center(
-              child: FutureBuilder<PackageInfo>(
-                future: PackageInfo.fromPlatform(),
-                builder: (context, snapshot) {
-                  final version = snapshot.hasData ? snapshot.data!.version : '...';
-                  return Text(
-                    'Versión $version',
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  );
-                },
-              ),
-            ),
-          ),
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -358,19 +374,8 @@ class SettingsPage extends ConsumerWidget {
     }
   }
 
-  String _getColorSchemeText(AppColorScheme scheme) {
-    switch (scheme) {
-      case AppColorScheme.blue:
-        return 'Azul';
-      case AppColorScheme.green:
-        return 'Verde';
-      case AppColorScheme.purple:
-        return 'Morado';
-      case AppColorScheme.orange:
-        return 'Naranja';
-      case AppColorScheme.red:
-        return 'Rojo';
-    }
+  String _getPaletteText(AppPaletteId paletteId) {
+    return AppPalettes.getDisplayName(paletteId);
   }
 
   void _navigateToMembers(BuildContext context) {
@@ -430,28 +435,106 @@ class SettingsPage extends ConsumerWidget {
     );
   }
 
-  Future<void> _showColorSchemeDialog(BuildContext context, WidgetRef ref) async {
+  Future<void> _showPaletteDialog(BuildContext context, WidgetRef ref) async {
+    final currentPaletteId = ref.read(appPaletteProvider);
+    
     return showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Selecciona el color'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: AppColorScheme.values.map((scheme) {
-              return RadioListTile<AppColorScheme>(
-                title: Text(_getColorSchemeText(scheme)),
-                value: scheme,
-                groupValue: ref.read(colorSchemeProvider),
-                onChanged: (value) {
-                  if (value != null) {
-                    ref.read(colorSchemeProvider.notifier).setColorScheme(value);
+          title: const Text('Selecciona una paleta'),
+          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: AppPaletteId.values.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final paletteId = AppPaletteId.values[index];
+                final palette = AppPalettes.getPalette(paletteId);
+                final isSelected = currentPaletteId == paletteId;
+                
+                return InkWell(
+                  onTap: () {
+                    ref.read(appPaletteProvider.notifier).setPalette(paletteId);
                     Navigator.of(context).pop();
-                  }
-                },
-              );
-            }).toList(),
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected 
+                            ? palette.primary.withOpacity(0.5)
+                            : Colors.grey.withOpacity(0.3),
+                        width: isSelected ? 2 : 1,
+                      ),
+                      color: isSelected 
+                          ? palette.primary.withOpacity(0.05)
+                          : Colors.transparent,
+                    ),
+                    child: Row(
+                      children: [
+                        // Mini swatches mostrando los colores principales
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: palette.primary,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: palette.secondary,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: palette.tertiary,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        // Nombre de la paleta
+                        Expanded(
+                          child: Text(
+                            palette.displayName,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                        // Check mark para la seleccionada
+                        if (isSelected)
+                          Icon(
+                            Icons.check_circle,
+                            color: palette.primary,
+                            size: 24,
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cerrar'),
+            ),
+          ],
         );
       },
     );

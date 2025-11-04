@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/models/category.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/router/app_router.dart';
+import '../../../../core/config/theme_config.dart';
 
 class CategoryListCard extends StatelessWidget {
   final List<Category> categories;
@@ -26,7 +27,7 @@ class CategoryListCard extends StatelessWidget {
                   children: [
                     Icon(
                       Icons.category_rounded,
-                      color: Theme.of(context).colorScheme.primary,
+                      color: context.appPalette.tertiary,
                     ),
                     const SizedBox(width: 8),
                     Text(
@@ -129,7 +130,7 @@ class _CategoryItem extends StatelessWidget {
             else
               Icon(
                 Icons.label_outline,
-                color: Theme.of(context).colorScheme.primary,
+                color: context.appPalette.tertiary,
               ),
             const SizedBox(width: 12),
             Expanded(
