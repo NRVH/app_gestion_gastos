@@ -125,6 +125,9 @@ class UpdateService {
         // Verificar que el APK esté disponible
         if (updateInfo.downloadUrl.isEmpty) {
           print('⚠️ [Update] No hay APK disponible en el release');
+          // Limpiar caché de error previo
+          _cachedUpdate = null;
+          await _clearCachedUpdate();
           throw Exception('No se encontró APK en el release de GitHub');
         }
         
@@ -145,25 +148,44 @@ class UpdateService {
         }
       } else if (response.statusCode == 404) {
         print('❌ [Update] No se encontró ningún release en GitHub');
+        // Limpiar caché de actualización previa que ya no es válida
+        _cachedUpdate = null;
+        await _clearCachedUpdate();
         throw Exception('No hay releases publicados en GitHub');
       } else if (response.statusCode == 403) {
         print('❌ [Update] Límite de rate limit de GitHub API excedido');
+        // No limpiar caché aquí, puede ser temporal
         throw Exception('Demasiadas solicitudes. Intenta más tarde.');
       } else {
         print('❌ [Update] Error en API de GitHub: ${response.statusCode}');
+        // Limpiar caché en caso de errores persistentes del servidor
+        _cachedUpdate = null;
+        await _clearCachedUpdate();
         throw Exception('Error del servidor de GitHub (${response.statusCode})');
       }
     } on SocketException catch (e) {
       print('❌ [Update] Sin conexión a internet: $e');
+      // Limpiar caché cuando hay problemas de conexión persistentes
+      _cachedUpdate = null;
+      await _clearCachedUpdate();
       throw Exception('Sin conexión a internet. Verifica tu red.');
     } on TimeoutException catch (e) {
       print('❌ [Update] Timeout: $e');
+      // Limpiar caché en caso de timeouts persistentes
+      _cachedUpdate = null;
+      await _clearCachedUpdate();
       throw Exception('Tiempo de espera agotado. Intenta de nuevo.');
     } on FormatException catch (e) {
       print('❌ [Update] Error parseando respuesta: $e');
+      // Limpiar caché si la respuesta es inválida
+      _cachedUpdate = null;
+      await _clearCachedUpdate();
       throw Exception('Error procesando la respuesta de GitHub');
     } catch (e) {
       print('❌ [Update] Error inesperado: $e');
+      // Limpiar caché en caso de errores inesperados
+      _cachedUpdate = null;
+      await _clearCachedUpdate();
       rethrow;
     }
   }
@@ -336,10 +358,16 @@ class UpdateService {
     }
   }
 
-  /// Limpia la actualización en caché
+  /// Limpia la actualización en caché (método interno)
   Future<void> _clearCachedUpdate() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_cachedUpdateKey);
+  }
+
+  /// Limpia la actualización en caché (método público)
+  Future<void> clearCachedUpdate() async {
+    _cachedUpdate = null;
+    await _clearCachedUpdate();
   }
 
   /// Obtiene la actualización en caché

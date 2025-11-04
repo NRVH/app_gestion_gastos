@@ -1,4 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:version/version.dart';
 import '../services/update_service.dart';
 
 // Estado de actualización
@@ -49,13 +51,33 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
     await _updateService.loadLastCheckTime();
     await _updateService.loadCachedUpdate();
     
+    // Verificar si la versión en caché sigue siendo mayor que la actual
+    // (esto limpia el caché si el usuario ya instaló la actualización)
     if (_updateService.hasUpdateAvailable) {
-      state = state.copyWith(
-        availableUpdate: _updateService.cachedUpdate,
-      );
-      
-      // Mostrar notificación local si hay actualización
-      _updateService.showUpdateNotification(_updateService.cachedUpdate!);
+      try {
+        final packageInfo = await PackageInfo.fromPlatform();
+        final currentVersion = Version.parse(packageInfo.version);
+        final cachedVersion = Version.parse(_updateService.cachedUpdate!.version);
+        
+        if (cachedVersion <= currentVersion) {
+          // La app ya está actualizada, limpiar caché
+          print('✅ [UpdateProvider] App ya actualizada a ${packageInfo.version}, limpiando caché');
+          await _updateService.clearCachedUpdate();
+          return;
+        }
+        
+        // Todavía hay actualización disponible
+        state = state.copyWith(
+          availableUpdate: _updateService.cachedUpdate,
+        );
+        
+        // Mostrar notificación local si hay actualización
+        _updateService.showUpdateNotification(_updateService.cachedUpdate!);
+      } catch (e) {
+        print('❌ [UpdateProvider] Error verificando versión en caché: $e');
+        // Si hay error, limpiar el caché por seguridad
+        await _updateService.clearCachedUpdate();
+      }
     }
   }
 
