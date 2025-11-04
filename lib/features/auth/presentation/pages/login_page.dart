@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/services/auth_service.dart';
+import '../../../../core/services/messaging_service.dart';
+import '../../../../core/services/firestore_service.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../core/providers/household_provider.dart';
@@ -26,6 +28,63 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     super.dispose();
   }
 
+  /// Inicializa el servicio de notificaciones después del login exitoso
+  Future<void> _initializeNotifications(String userId) async {
+    try {
+      print('🔔 [Login] Iniciando servicio de notificaciones para user: $userId');
+      final messagingService = ref.read(messagingServiceProvider);
+      
+      // Solicitar permisos e inicializar
+      await messagingService.initialize();
+      print('🔔 [Login] Servicio de notificaciones inicializado');
+      
+      // Obtener el token y guardarlo en Firestore
+      final token = await messagingService.getToken();
+      if (token != null) {
+        print('🔔 [Login] FCM Token obtenido: $token');
+        
+        // Guardar token en Firestore para todos los households del usuario
+        final firestoreService = ref.read(firestoreServiceProvider);
+        final households = await firestoreService.watchUserHouseholds(userId).first;
+        
+        for (final household in households) {
+          await firestoreService.updateFcmToken(household.id, userId, token);
+          print('🔔 [Login] ✅ Token guardado en household: ${household.id}');
+        }
+      }
+      
+      // Configurar listener para actualizar token cuando se refresque
+      messagingService.onTokenRefresh.listen((newToken) async {
+        print('🔔 [Login] Token refrescado: $newToken');
+        final firestoreService = ref.read(firestoreServiceProvider);
+        final households = await firestoreService.watchUserHouseholds(userId).first;
+        
+        for (final household in households) {
+          await firestoreService.updateFcmToken(household.id, userId, newToken);
+        }
+      });
+      
+      // Escuchar mensajes cuando la app está en foreground
+      messagingService.onMessage.listen((message) {
+        print('🔔 [Foreground] Mensaje recibido: ${message.notification?.title}');
+      });
+      
+      // Escuchar cuando el usuario toca una notificación
+      messagingService.onMessageOpenedApp.listen((message) {
+        print('🔔 [Tapped] Usuario tocó notificación: ${message.notification?.title}');
+      });
+      
+      // Verificar si la app se abrió desde una notificación
+      final initialMessage = await messagingService.getInitialMessage();
+      if (initialMessage != null) {
+        print('🔔 [Initial] App abierta desde notificación: ${initialMessage.notification?.title}');
+      }
+    } catch (e) {
+      print('❌ [Login] Error al inicializar notificaciones: $e');
+      // No bloqueamos el flujo de login si falla la inicialización de notificaciones
+    }
+  }
+
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -42,6 +101,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       // Check if user has a household
       final user = ref.read(currentUserProvider);
       if (user != null) {
+        // Inicializar notificaciones después del login exitoso
+        await _initializeNotifications(user.uid);
+        
         final households = await ref.read(userHouseholdsProvider.future);
         
         if (households.isEmpty) {
@@ -80,6 +142,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       // Check if user has a household
       final user = ref.read(currentUserProvider);
       if (user != null) {
+        // Inicializar notificaciones después del login exitoso
+        await _initializeNotifications(user.uid);
+        
         final households = await ref.read(userHouseholdsProvider.future);
         
         if (households.isEmpty) {
