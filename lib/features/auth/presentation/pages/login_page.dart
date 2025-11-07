@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/messaging_service.dart';
@@ -6,6 +7,8 @@ import '../../../../core/services/firestore_service.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../core/providers/household_provider.dart';
+import '../../../../core/config/theme_config.dart';
+import '../../../../core/widgets/responsive_center.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -168,22 +171,31 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final themeMode = ref.watch(themeModeProvider);
+    // Detectar correctamente si está en modo oscuro considerando el tema del sistema
+    final isDarkMode = themeMode == ThemeMode.dark ||
+        (themeMode == ThemeMode.system &&
+            MediaQuery.of(context).platformBrightness == Brightness.dark);
+    
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Icon(
-                    Icons.account_balance_wallet_rounded,
-                    size: 80,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: ResponsiveCenter(
+              maxWidth: 600,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Icon(
+                        Icons.account_balance_wallet_rounded,
+                        size: 80,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                   const SizedBox(height: 24),
                   Text(
                     'Bienvenido',
@@ -239,7 +251,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         ? const SizedBox(
                             height: 20,
                             width: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
                           )
                         : const Text('Iniciar sesión'),
                   ),
@@ -287,6 +301,35 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             ),
           ),
         ),
+      ),
+      // Solo en Web: IconButton de tema en esquina superior derecha
+      if (kIsWeb) ...[
+        Positioned(
+          top: 16,
+          right: 16,
+          child: SafeArea(
+            child: Material(
+              color: Colors.transparent,
+              child: IconButton(
+                icon: Icon(
+                  isDarkMode ? Icons.light_mode : Icons.dark_mode,
+                  size: 28,
+                ),
+                tooltip: isDarkMode ? 'Modo claro' : 'Modo oscuro',
+                onPressed: () {
+                  ref.read(themeModeProvider.notifier).toggleTheme();
+                },
+                style: IconButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  foregroundColor: Theme.of(context).colorScheme.onSurface,
+                  padding: const EdgeInsets.all(12),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+        ],
       ),
     );
   }

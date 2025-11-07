@@ -59,54 +59,84 @@ class _MainPageState extends ConsumerState<MainPage> {
   @override
   Widget build(BuildContext context) {
     final hasUpdate = ref.watch(hasUpdateAvailableProvider);
+    final isDesktop = MediaQuery.of(context).size.width > 800;
+
+    final destinations = [
+      const NavigationDestination(
+        icon: Icon(Icons.home_outlined),
+        selectedIcon: Icon(Icons.home),
+        label: 'Inicio',
+      ),
+      const NavigationDestination(
+        icon: Icon(Icons.savings_outlined),
+        selectedIcon: Icon(Icons.savings),
+        label: 'Ingresos',
+      ),
+      const NavigationDestination(
+        icon: Icon(Icons.shopping_cart_outlined),
+        selectedIcon: Icon(Icons.shopping_cart),
+        label: 'Gastos',
+      ),
+      const NavigationDestination(
+        icon: Icon(Icons.category_outlined),
+        selectedIcon: Icon(Icons.category),
+        label: 'Categorías',
+      ),
+      NavigationDestination(
+        icon: Badge(
+          isLabelVisible: hasUpdate,
+          label: const Text(''),
+          backgroundColor: Colors.orange,
+          child: const Icon(Icons.settings_outlined),
+        ),
+        selectedIcon: Badge(
+          isLabelVisible: hasUpdate,
+          label: const Text(''),
+          backgroundColor: Colors.orange,
+          child: const Icon(Icons.settings),
+        ),
+        label: 'Config',
+      ),
+    ];
 
     return Scaffold(
-      body: PageView(
-        controller: _pageController,
-        onPageChanged: _onPageChanged,
-        children: _pages,
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: _onDestinationSelected,
-        destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Inicio',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.savings_outlined),
-            selectedIcon: Icon(Icons.savings),
-            label: 'Ingresos',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.shopping_cart_outlined),
-            selectedIcon: Icon(Icons.shopping_cart),
-            label: 'Gastos',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.category_outlined),
-            selectedIcon: Icon(Icons.category),
-            label: 'Categorías',
-          ),
-          NavigationDestination(
-            icon: Badge(
-              isLabelVisible: hasUpdate,
-              label: const Text(''),
-              backgroundColor: Colors.orange,
-              child: const Icon(Icons.settings_outlined),
+      body: isDesktop
+          ? Row(
+              children: [
+                NavigationRail(
+                  selectedIndex: _currentIndex,
+                  onDestinationSelected: _onDestinationSelected,
+                  labelType: NavigationRailLabelType.all,
+                  destinations: destinations.map((destination) {
+                    return NavigationRailDestination(
+                      icon: destination.icon,
+                      selectedIcon: destination.selectedIcon,
+                      label: Text(destination.label),
+                    );
+                  }).toList(),
+                ),
+                const VerticalDivider(thickness: 1, width: 1),
+                Expanded(
+                  child: PageView(
+                    controller: _pageController,
+                    onPageChanged: _onPageChanged,
+                    children: _pages,
+                  ),
+                ),
+              ],
+            )
+          : PageView(
+              controller: _pageController,
+              onPageChanged: _onPageChanged,
+              children: _pages,
             ),
-            selectedIcon: Badge(
-              isLabelVisible: hasUpdate,
-              label: const Text(''),
-              backgroundColor: Colors.orange,
-              child: const Icon(Icons.settings),
+      bottomNavigationBar: isDesktop
+          ? null
+          : NavigationBar(
+              selectedIndex: _currentIndex,
+              onDestinationSelected: _onDestinationSelected,
+              destinations: destinations,
             ),
-            label: 'Config',
-          ),
-        ],
-      ),
     );
   }
 }

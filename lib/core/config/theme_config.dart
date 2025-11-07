@@ -217,6 +217,13 @@ class AppTheme {
         ),
       ),
       
+      // TextButton usa el color primario del tema
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: colorScheme.primary,
+        ),
+      ),
+      
       // Chips y selecciones usan el acento
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.lightSurfaceVariant,
@@ -315,10 +322,12 @@ class AppTheme {
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(
-            color: palette.secondary, // Usa el color secundario
+            color: Colors.white70, // Borde blanco suave al enfocar
             width: 2,
           ),
         ),
+        labelStyle: const TextStyle(color: Colors.grey), // Labels grises
+        floatingLabelStyle: const TextStyle(color: Colors.white70), // Label blanco al enfocar
       ),
       
       // Botones elevados usan el acento del ColorScheme
@@ -329,6 +338,13 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
+        ),
+      ),
+      
+      // TextButton usa el color primario del tema (más visible en oscuro)
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: colorScheme.primary,
         ),
       ),
       

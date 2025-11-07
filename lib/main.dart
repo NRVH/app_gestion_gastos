@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -12,6 +13,7 @@ import 'core/services/messaging_service.dart';
 import 'firebase_options.dart';
 
 // Background message handler (debe ser función de nivel superior)
+// Solo funciona en móviles (Android/iOS), no en Web
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -29,10 +31,14 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   
-  // Registrar el handler de mensajes en background
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-  
-  print('🔔 [Main] Firebase Messaging background handler registrado');
+  // Registrar el handler de mensajes en background solo en móvil
+  // Firebase Messaging background handler no está soportado en Web
+  if (!kIsWeb) {
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    print('🔔 [Main] Firebase Messaging background handler registrado');
+  } else {
+    print('🌐 [Main] Ejecutando en Web - Background messaging no disponible');
+  }
   
   // Inicializar SharedPreferences
   final sharedPreferences = await SharedPreferences.getInstance();

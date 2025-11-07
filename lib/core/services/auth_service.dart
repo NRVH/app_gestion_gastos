@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -123,8 +124,22 @@ class AuthService {
   Future<UserCredential?> signInWithGoogle() async {
     print('🔐 [GOOGLE] Iniciando signInWithGoogle');
     try {
-      // Trigger the authentication flow
-      print('🔐 [GOOGLE] Creando GoogleSignIn instance...');
+      // En Web, usamos el método nativo de Firebase que es más confiable
+      if (kIsWeb) {
+        print('🔐 [GOOGLE] Usando signInWithPopup para Web...');
+        final GoogleAuthProvider googleProvider = GoogleAuthProvider();
+        googleProvider.addScope('email');
+        googleProvider.setCustomParameters({
+          'client_id': '42127050623-rdbnb8ju2kt5op5g4sqivkq6mp6lqru5.apps.googleusercontent.com',
+        });
+        
+        final UserCredential userCredential = await _auth.signInWithPopup(googleProvider);
+        print('🔐 [GOOGLE] ✅ Login exitoso! User ID: ${userCredential.user?.uid}');
+        return userCredential;
+      }
+      
+      // Para móvil, usamos el flujo tradicional con google_sign_in
+      print('🔐 [GOOGLE] Creando GoogleSignIn instance para móvil...');
       final googleSignIn = GoogleSignIn(
         scopes: ['email'],
       );
@@ -134,27 +149,23 @@ class AuthService {
       
       if (googleUser == null) {
         print('🔐 [GOOGLE] ⚠️ Usuario canceló el login');
-        // User canceled the sign-in
         return null;
       }
 
       print('🔐 [GOOGLE] ✅ Usuario seleccionado: ${googleUser.email}');
-      // Obtain the auth details from the request
       print('🔐 [GOOGLE] Obteniendo authentication tokens...');
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
 
-      // Check if we have the required tokens
       final String? accessToken = googleAuth.accessToken;
       final String? idToken = googleAuth.idToken;
 
       print('🔐 [GOOGLE] accessToken: ${accessToken != null ? "✅ OK" : "❌ NULL"}');
       print('🔐 [GOOGLE] idToken: ${idToken != null ? "✅ OK" : "❌ NULL"}');
 
-      if (accessToken == null || idToken == null) {
-        throw Exception('Error obteniendo tokens de Google');
+      if (idToken == null) {
+        throw Exception('Error obteniendo token de Google');
       }
 
-      // Create a new credential
       print('🔐 [GOOGLE] Creando credential de Firebase...');
       final credential = GoogleAuthProvider.credential(
         accessToken: accessToken,

@@ -6,7 +6,13 @@ import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:version/version.dart';
-import 'platform_file_handler.dart';
+
+// Imports condicionales para evitar errores en Web
+// dart:io no está disponible en Web
+import 'package:path_provider/path_provider.dart'
+    if (dart.library.html) 'package:path_provider/path_provider.dart';
+import 'package:open_filex/open_filex.dart'
+    if (dart.library.html) 'package:open_filex/open_filex.dart';
 
 final updateServiceProvider = Provider<UpdateService>((ref) {
   return UpdateService();
@@ -209,12 +215,23 @@ class UpdateService {
 
       print('⬇️ [Update] Descargando APK desde: ${updateInfo.downloadUrl}');
       
-      // Obtener directorio temporal y crear ruta
-      final tempDir = await PlatformFileHandler.getTempDirectory();
+      // Importar dart:io solo cuando no es Web
+      // ignore: depend_on_referenced_packages
+      final io = await import('dart:io');
+      
+      // Obtener directorio temporal
+      final tempDir = await getTemporaryDirectory();
       final fileName = 'app-update-${updateInfo.version}.apk';
       final filePath = '${tempDir.path}/$fileName';
+      
+      // Crear archivo usando reflexión para evitar import directo de dart:io
+      final file = io.File(filePath);
 
-      // Si ya existe el archivo, no es necesario eliminarlo (lo sobre-escribiremos)
+      // Si ya existe el archivo, eliminarlo primero
+      if (await file.exists()) {
+        await file.delete();
+        print('🗑️ [Update] APK anterior eliminado');
+      }
 
       // Descargar con progreso
       final client = http.Client();
@@ -266,20 +283,33 @@ class UpdateService {
         throw Exception('El archivo descargado está vacío');
       }
 
-      // Guardar archivo usando el handler multiplataforma
-      await PlatformFileHandler.writeApkFile(filePath, bytes);
-      final fileSize = await PlatformFileHandler.getFileSize(filePath);
-      print('✅ [Update] APK descargado: $filePath (${(fileSize / (1024 * 1024)).toStringAsFixed(2)} MB)');
+      // Guardar archivo
+      await file.writeAsBytes(bytes);
+      final fileSize = await file.length();
+      print('✅ [Update] APK descargado: ${file.path} (${(fileSize / (1024 * 1024)).toStringAsFixed(2)} MB)');
 
       // Verificar que el archivo existe y tiene contenido
-      if (!await PlatformFileHandler.fileExists(filePath)) {
+      if (!await file.exists()) {
         throw Exception('Error al guardar el archivo APK');
       }
 
       // Instalar APK
       print('📦 [Update] Abriendo instalador...');
-      await PlatformFileHandler.openInstaller(filePath);
-      print('✅ [Update] Instalador abierto exitosamente');
+      final result = await OpenFilex.open(
+        file.path,
+        type: 'application/vnd.android.package-archive',
+      );
+      
+      if (result.type == ResultType.done) {
+        print('✅ [Update] Instalador abierto exitosamente');
+      } else if (result.type == ResultType.noAppToOpen) {
+        throw Exception('No se puede abrir el instalador. Verifica los permisos.');
+      } else if (result.type == ResultType.fileNotFound) {
+        throw Exception('Archivo APK no encontrado después de la descarga');
+      } else {
+        print('⚠️ [Update] Resultado: ${result.type} - ${result.message}');
+        throw Exception(result.message ?? 'Error desconocido al abrir el instalador');
+      }
       
     } on TimeoutException catch (e) {
       print('❌ [Update] Timeout durante descarga: $e');

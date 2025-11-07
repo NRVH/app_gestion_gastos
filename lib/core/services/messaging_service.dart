@@ -1,4 +1,5 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 final messagingServiceProvider = Provider<MessagingService>((ref) {
@@ -6,6 +7,7 @@ final messagingServiceProvider = Provider<MessagingService>((ref) {
 });
 
 // Background message handler (must be top-level function)
+// Solo funciona en móvil (Android/iOS)
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   print('Handling a background message: ${message.messageId}');
@@ -17,6 +19,15 @@ class MessagingService {
   MessagingService(this._messaging);
 
   Future<void> initialize() async {
+    // En Web, Firebase Messaging tiene soporte limitado
+    // Solo funciona completamente en Chrome/Edge con HTTPS
+    if (kIsWeb) {
+      print('🌐 [MessagingService] Ejecutando en Web - Funcionalidad limitada');
+      print('🌐 [MessagingService] Las notificaciones push en Web requieren HTTPS y service worker');
+      // TODO: Para producción en Web, configurar firebase-messaging-sw.js
+      return;
+    }
+    
     print('🔔 [MessagingService] Solicitando permisos de notificación...');
     
     // Request permission

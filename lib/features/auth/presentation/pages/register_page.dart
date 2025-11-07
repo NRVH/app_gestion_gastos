@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/utils/validators.dart';
+import '../../../../core/widgets/responsive_center.dart';
 
 class RegisterPage extends ConsumerStatefulWidget {
   const RegisterPage({super.key});
@@ -74,13 +75,15 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
         title: const Text('Crear cuenta'),
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+        child: ResponsiveCenter(
+          maxWidth: 600,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
                 Icon(
                   Icons.person_add_alt_1_rounded,
                   size: 80,
@@ -178,7 +181,8 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                         )
                       : const Text('Crear cuenta'),
                 ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
