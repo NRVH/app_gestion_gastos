@@ -24,30 +24,29 @@ class Category with _$Category {
 }
 
 extension CategoryExtension on Category {
-  // Presupuesto total disponible este mes (límite fijo + balance acumulado)
-  double get totalAvailable => monthlyLimit + accumulatedBalance;
+  // Presupuesto disponible este mes (SOLO el límite mensual, sin acumular)
+  // El accumulatedBalance ya no se usa en la lógica, siempre es 0
+  double get totalAvailable => monthlyLimit;
   
   // Presupuesto restante este mes
-  double get remainingBudget => (totalAvailable - spentThisMonth).clamp(0.0, double.infinity);
+  double get remainingBudget => (monthlyLimit - spentThisMonth).clamp(0.0, double.infinity);
   
   double get progress {
-    if (totalAvailable == 0) return 0.0;
-    return (spentThisMonth / totalAvailable).clamp(0.0, 2.0); // Allow 200% to show excess
+    if (monthlyLimit == 0) return 0.0;
+    return (spentThisMonth / monthlyLimit).clamp(0.0, 2.0); // Allow 200% to show excess
   }
   
-  bool get isOverBudget => spentThisMonth > totalAvailable;
+  bool get isOverBudget => spentThisMonth > monthlyLimit;
   
-  // Optimización: evitar recalcular totalAvailable múltiples veces
+  // Optimización: evitar recalcular monthlyLimit múltiples veces
   bool get isNearLimit {
-    final total = totalAvailable;
-    return spentThisMonth >= total * 0.8 && spentThisMonth <= total;
+    return spentThisMonth >= monthlyLimit * 0.8 && spentThisMonth <= monthlyLimit;
   }
   
   // Optimización: usar lógica más eficiente con un solo cálculo de comparación
   CategoryStatus get status {
-    final total = totalAvailable;
-    if (spentThisMonth > total) return CategoryStatus.overBudget;
-    if (spentThisMonth >= total * 0.8) return CategoryStatus.nearLimit;
+    if (spentThisMonth > monthlyLimit) return CategoryStatus.overBudget;
+    if (spentThisMonth >= monthlyLimit * 0.8) return CategoryStatus.nearLimit;
     return CategoryStatus.ok;
   }
 }

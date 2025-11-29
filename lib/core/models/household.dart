@@ -34,6 +34,7 @@ class Household with _$Household {
     @TimestampConverter() @Default(null) DateTime? inviteCodeExpiry,
     @TimestampConverter() @Default(null) DateTime? createdAt,
     @TimestampConverter() @Default(null) DateTime? updatedAt,
+    String? currentActiveMonth, // Format: "2025-12" - Mes activo para conteo de gastos (puede diferir del mes calendario)
   }) = _Household;
 
   factory Household.fromJson(Map<String, dynamic> json) =>
@@ -41,12 +42,16 @@ class Household with _$Household {
 }
 
 extension HouseholdExtension on Household {
+  // Balance total disponible = aportaciones de este mes + colchón del mes anterior
   double get availableBalance => carryOver + monthPool;
   
+  // Progreso de APORTACIÓN (solo basado en monthPool, sin contar carryOver)
+  // El carryOver es un colchón, no reduce la meta de aportación
   double get progress {
     if (monthTarget == 0) return 0.0;
-    return (availableBalance / monthTarget).clamp(0.0, 1.0);
+    return (monthPool / monthTarget).clamp(0.0, 1.0);
   }
   
-  bool get isOnTrack => availableBalance >= monthTarget;
+  // Están "on track" si han aportado lo suficiente (sin contar carryOver)
+  bool get isOnTrack => monthPool >= monthTarget;
 }

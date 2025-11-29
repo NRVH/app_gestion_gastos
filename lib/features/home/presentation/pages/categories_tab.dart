@@ -81,6 +81,66 @@ class _CategoriesTabState extends ConsumerState<CategoriesTab> {
               },
               tooltip: 'Buscar',
             ),
+          // BOTÓN TEMPORAL DE RESET
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.red),
+            onPressed: () async {
+              final householdId = ref.read(currentHouseholdIdProvider);
+              if (householdId != null) {
+                await ref.read(firestoreServiceProvider).recalculateCategorySpending(householdId);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Categorías recalculadas del mes actual')),
+                  );
+                }
+              }
+            },
+            tooltip: 'RESET TEMPORAL',
+          ),
+          // BOTÓN FORZAR CIERRE DE MES
+          IconButton(
+            icon: const Icon(Icons.restart_alt, color: Colors.orange),
+            onPressed: () async {
+              final householdId = ref.read(currentHouseholdIdProvider);
+              if (householdId != null) {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('⚠️ Forzar Cierre de Mes'),
+                    content: const Text(
+                      'Esto RESETARÁ todas las categorías a \$0.00.\n\n'
+                      'Úsalo solo si necesitas empezar un nuevo mes sin esperar al cierre automático.\n\n'
+                      '¿Continuar?',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancelar'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        style: TextButton.styleFrom(foregroundColor: Colors.orange),
+                        child: const Text('RESETEAR'),
+                      ),
+                    ],
+                  ),
+                );
+                
+                if (confirm == true && mounted) {
+                  await ref.read(firestoreServiceProvider).forceResetCategories(householdId);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('✅ Categorías reseteadas a \$0 - Nuevo mes iniciado'),
+                        backgroundColor: Colors.orange,
+                      ),
+                    );
+                  }
+                }
+              }
+            },
+            tooltip: 'FORZAR CIERRE DE MES',
+          ),
           IconButton(
             icon: const Icon(Icons.sort),
             onPressed: () => _showSortDialog(context),

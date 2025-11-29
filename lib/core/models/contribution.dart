@@ -57,6 +57,7 @@ class Contribution with _$Contribution {
     @Default('') String note,
     @Default(null) String? byDisplayName,
     @NullableTimestampConverter() @Default(null) DateTime? createdAt,
+    @Default(null) String? month, // Formato: "YYYY-MM"
   }) = _Contribution;
 
   factory Contribution.fromJson(Map<String, dynamic> json) =>

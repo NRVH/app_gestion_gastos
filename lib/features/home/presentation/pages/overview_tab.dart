@@ -9,6 +9,7 @@ import '../../../../core/models/household.dart';
 import '../../../../core/models/member.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../household/presentation/widgets/share_household_dialog.dart';
+import '../../../history/presentation/pages/month_history_page.dart';
 import 'stats_page.dart';
 import 'month_selector_page.dart';
 
@@ -48,6 +49,11 @@ class OverviewTab extends ConsumerWidget {
             icon: const Icon(Icons.bar_chart),
             onPressed: () => _navigateToStats(context),
             tooltip: 'Estadísticas',
+          ),
+          IconButton(
+            icon: const Icon(Icons.calendar_month),
+            onPressed: () => _navigateToHistory(context),
+            tooltip: 'Histórico',
           ),
           IconButton(
             icon: const Icon(Icons.history),
@@ -549,15 +555,26 @@ class OverviewTab extends ConsumerWidget {
           backgroundColor: Colors.green,
         ),
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('❌ [CloseMonth] Error detallado: $e');
+      print('📋 [CloseMonth] Stack trace: $stackTrace');
+      
       // Cerrar loading si está abierto
       if (context.mounted) Navigator.pop(context);
       
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al cerrar mes: $e'),
+          content: Text('❌ Error al cerrar mes:\n${e.toString()}'),
           backgroundColor: Colors.red,
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: 'Copiar',
+            textColor: Colors.white,
+            onPressed: () {
+              // Aquí podrías copiar el error al portapapeles si quieres
+            },
+          ),
         ),
       );
     }
@@ -567,6 +584,14 @@ class OverviewTab extends ConsumerWidget {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => const StatsPage(),
+      ),
+    );
+  }
+
+  void _navigateToHistory(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const MonthHistoryPage(),
       ),
     );
   }
@@ -616,3 +641,4 @@ class OverviewTab extends ConsumerWidget {
     );
   }
 }
+

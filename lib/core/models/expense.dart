@@ -59,6 +59,7 @@ class Expense with _$Expense {
     @Default(null) String? byDisplayName,
     @Default(null) String? categoryName,
     @NullableTimestampConverter() @Default(null) DateTime? createdAt,
+    @Default(null) String? month, // Formato: "YYYY-MM"
   }) = _Expense;
 
   factory Expense.fromJson(Map<String, dynamic> json) =>

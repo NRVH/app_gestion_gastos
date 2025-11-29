@@ -441,75 +441,80 @@ class _ContributionsTabState extends ConsumerState<ContributionsTab> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).scaffoldBackgroundColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Handle bar
-            Container(
-              margin: const EdgeInsets.only(bottom: 20),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            
-            // Título
-            const Text(
-              'Ordenar ingresos',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 20),
-            
-            // Opciones de ordenamiento
-            _buildSortOption(Icons.attach_money, 'Monto', ContributionSortCriteria.amount),
-            _buildSortOption(Icons.calendar_today, 'Fecha', ContributionSortCriteria.date),
-            _buildSortOption(Icons.person, 'Persona', ContributionSortCriteria.person),
-            
-            const SizedBox(height: 20),
-            const Divider(),
-            const SizedBox(height: 12),
-            
-            // Toggle Ascendente/Descendente
-            Row(
-              children: [
-                const Icon(Icons.swap_vert, size: 20),
-                const SizedBox(width: 12),
-                const Text('Orden:', style: TextStyle(fontWeight: FontWeight.w500)),
-                const Spacer(),
-                SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(value: false, label: Text('Desc')),
-                    ButtonSegment(value: true, label: Text('Asc')),
-                  ],
-                  selected: {_sortAscending},
-                  onSelectionChanged: (Set<bool> selection) {
-                    setState(() {
-                      _sortAscending = selection.first;
-                    });
-                  },
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Handle bar
+              Container(
+                margin: const EdgeInsets.only(bottom: 20),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
                 ),
-              ],
-            ),
-            
-            const SizedBox(height: 20),
-            
-            // Botón cerrar
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Aplicar'),
               ),
-            ),
-          ],
+              
+              // Título
+              const Text(
+                'Ordenar ingresos',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
+              
+              // Opciones de ordenamiento
+              _buildSortOptionWithState(Icons.attach_money, 'Monto', ContributionSortCriteria.amount, setModalState),
+              _buildSortOptionWithState(Icons.calendar_today, 'Fecha', ContributionSortCriteria.date, setModalState),
+              _buildSortOptionWithState(Icons.person, 'Persona', ContributionSortCriteria.person, setModalState),
+              
+              const SizedBox(height: 20),
+              const Divider(),
+              const SizedBox(height: 12),
+              
+              // Toggle Ascendente/Descendente
+              Row(
+                children: [
+                  const Icon(Icons.swap_vert, size: 20),
+                  const SizedBox(width: 12),
+                  const Text('Orden:', style: TextStyle(fontWeight: FontWeight.w500)),
+                  const Spacer(),
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: false, label: Text('Desc')),
+                      ButtonSegment(value: true, label: Text('Asc')),
+                    ],
+                    selected: {_sortAscending},
+                    onSelectionChanged: (Set<bool> selection) {
+                      setState(() {
+                        _sortAscending = selection.first;
+                      });
+                      setModalState(() {
+                        _sortAscending = selection.first;
+                      });
+                    },
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 20),
+              
+              // Botón cerrar
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Aplicar'),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -531,6 +536,31 @@ class _ContributionsTabState extends ConsumerState<ContributionsTab> {
       trailing: isSelected ? Icon(Icons.check, color: palette.secondary) : null,
       onTap: () {
         setState(() {
+          _sortCriteria = criteria;
+        });
+      },
+    );
+  }
+
+  Widget _buildSortOptionWithState(IconData icon, String label, ContributionSortCriteria criteria, StateSetter setModalState) {
+    final isSelected = _sortCriteria == criteria;
+    final palette = context.appPalette;
+    
+    return ListTile(
+      leading: Icon(icon, color: isSelected ? palette.secondary : null),
+      title: Text(
+        label,
+        style: TextStyle(
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          color: isSelected ? palette.secondary : null,
+        ),
+      ),
+      trailing: isSelected ? Icon(Icons.check, color: palette.secondary) : null,
+      onTap: () {
+        setState(() {
+          _sortCriteria = criteria;
+        });
+        setModalState(() {
           _sortCriteria = criteria;
         });
       },

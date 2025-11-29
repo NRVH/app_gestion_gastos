@@ -21,6 +21,15 @@ class FirestoreService {
   // 🧪 Verificar si estamos en modo TEST
   bool get _isTestMode => ENABLE_TEST_MODE;
   
+  // Helper para convertir Timestamp/DateTime/String a String ISO 8601
+  String _convertToIsoString(dynamic value) {
+    if (value == null) return DateTime.now().toIso8601String();
+    if (value is Timestamp) return value.toDate().toIso8601String();
+    if (value is DateTime) return value.toIso8601String();
+    if (value is String) return value; // Ya es String ISO
+    return DateTime.now().toIso8601String(); // Fallback
+  }
+  
   // TODO: OPTIMIZACIÓN FUTURA - Configurabilidad de test mode
   // En lugar de depender de una constante global (ENABLE_TEST_MODE), considerar:
   // 
@@ -85,6 +94,7 @@ class FirestoreService {
       members: [ownerUid],
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
+      currentActiveMonth: month, // ✅ Inicializar con el mes actual
     );
 
     final member = Member(
@@ -555,6 +565,19 @@ class FirestoreService {
     required DateTime date,
     String note = '',
   }) async {
+    // Obtener el mes ACTIVO del household para vincular el gasto (puede diferir del mes calendario)
+    final householdDoc = await _firestore.collection('households').doc(householdId).get();
+    final householdData = householdDoc.data();
+    
+    print('🔍 [addExpense] Household data: $householdData');
+    print('🔍 [addExpense] currentActiveMonth: ${householdData?['currentActiveMonth']}');
+    print('🔍 [addExpense] month: ${householdData?['month']}');
+    
+    final activeMonth = householdData?['currentActiveMonth'] as String? ?? householdData?['month'] as String?;
+    
+    print('💾 [addExpense] Guardando gasto con month: $activeMonth');
+    print('💾 [addExpense] Amount: $amount, Category: $categoryName, Date: $date');
+
     final expenseRef = _firestore
         .collection('households')
         .doc(householdId)
@@ -571,6 +594,7 @@ class FirestoreService {
       date: date,
       note: note,
       createdAt: DateTime.now(),
+      month: activeMonth, // Vincular al mes ACTIVO del household
     );
 
     final batch = _firestore.batch();
@@ -595,27 +619,77 @@ class FirestoreService {
     return expenseRef.id;
   }
 
-  Stream<List<Expense>> watchExpenses(String householdId, {int? limit}) {
+  Stream<List<Expense>> watchExpenses(String householdId, {int? limit, String? month}) async* {
     // 🧪 MODO TEST: Devolver gastos de prueba
     if (_isTestMode) {
       final expenses = MockData.getTestExpenses();
-      return Stream.value(limit != null ? expenses.take(limit).toList() : expenses);
+      yield limit != null ? expenses.take(limit).toList() : expenses;
+      return;
+    }
+    
+    // ✅ Si no se especifica mes, usar currentActiveMonth del household
+    String? filterMonth = month;
+    if (filterMonth == null) {
+      print('🔍 [watchExpenses] Obteniendo household: $householdId');
+      final householdDoc = await _firestore.collection('households').doc(householdId).get();
+      final householdData = householdDoc.data();
+      
+      print('📦 [watchExpenses] Household data completo: $householdData');
+      print('📦 [watchExpenses] currentActiveMonth: ${householdData?['currentActiveMonth']}');
+      print('📦 [watchExpenses] month: ${householdData?['month']}');
+      
+      filterMonth = householdData?['currentActiveMonth'] as String?;
+      
+      // ✅ Si currentActiveMonth no existe, inicializarlo con el mes del household
+      if (filterMonth == null) {
+        filterMonth = householdData?['month'] as String?;
+        if (filterMonth == null) {
+          final now = DateTime.now();
+          filterMonth = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+        }
+        
+        // Inicializar currentActiveMonth en Firestore
+        print('⚠️ [watchExpenses] Inicializando currentActiveMonth: $filterMonth');
+        await _firestore.collection('households').doc(householdId).update({
+          'currentActiveMonth': filterMonth,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+      print('✅ [watchExpenses] Filtrando por MES ACTIVO: $filterMonth');
+    } else {
+      print('✅ [watchExpenses] Filtrando por mes especificado: $filterMonth');
     }
     
     var query = _firestore
         .collection('households')
         .doc(householdId)
         .collection('expenses')
-        .orderBy('date', descending: true);
+        .where('month', isEqualTo: filterMonth);  // ✅ FILTRO POR MES
 
-    if (limit != null) {
-      query = query.limit(limit);
-    }
-
-    return query.snapshots().map((snapshot) {
-      return snapshot.docs
-          .map((doc) => Expense.fromJson({'id': doc.id, ...doc.data()}))
+    yield* query.snapshots().map((snapshot) {
+      print('🔥 [watchExpenses] Query ejecutada - Documentos encontrados: ${snapshot.docs.length}');
+      
+      var expenses = snapshot.docs
+          .map((doc) {
+            final data = doc.data();
+            print('📄 [watchExpenses] Expense doc: ${doc.id}, month: ${data['month']}, amount: ${data['amount']}, date: ${data['date']}');
+            return Expense.fromJson({'id': doc.id, ...data});
+          })
           .toList();
+      
+      print('📊 [watchExpenses] Total expenses parseados: ${expenses.length}');
+      
+      // Ordenar por fecha en memoria (descendente)
+      expenses.sort((a, b) => b.date.compareTo(a.date));
+      
+      // Aplicar límite si se especificó
+      if (limit != null && expenses.length > limit) {
+        expenses = expenses.sublist(0, limit);
+        print('✂️ [watchExpenses] Aplicado límite: $limit, expenses finales: ${expenses.length}');
+      }
+      
+      print('✅ [watchExpenses] Retornando ${expenses.length} expenses');
+      return expenses;
     });
   }
 
@@ -687,20 +761,107 @@ class FirestoreService {
     await recalculateCategorySpending(householdId);
   }
 
+  /// Fuerza el reseteo de todas las categorías a $0 (simula cierre de mes manual)
+  Future<void> forceResetCategories(String householdId) async {
+    print('🔶 [Firestore] FORZANDO CIERRE DE MES - Reseteando todas las categorías a \$0');
+    
+    // Obtener el household actual
+    final householdDoc = await _firestore
+        .collection('households')
+        .doc(householdId)
+        .get();
+    
+    final householdData = householdDoc.data();
+    final currentMonth = householdData?['currentActiveMonth'] as String? ?? householdData?['month'] as String?;
+    
+    // Calcular el siguiente mes
+    DateTime nextMonth;
+    if (currentMonth != null) {
+      final parts = currentMonth.split('-');
+      final year = int.parse(parts[0]);
+      final month = int.parse(parts[1]);
+      nextMonth = DateTime(year, month + 1, 1);
+    } else {
+      // Si no existe currentActiveMonth, usar el mes siguiente al actual
+      final now = DateTime.now();
+      nextMonth = DateTime(now.year, now.month + 1, 1);
+    }
+    
+    final nextMonthString = '${nextMonth.year}-${nextMonth.month.toString().padLeft(2, '0')}';
+    print('🔶 [Firestore] Actualizando mes activo a: $nextMonthString');
+    
+    // Obtener todas las categorías
+    final categoriesSnapshot = await _firestore
+        .collection('households')
+        .doc(householdId)
+        .collection('categories')
+        .get();
+
+    final batch = _firestore.batch();
+    int resetCount = 0;
+
+    // Actualizar el mes activo en el household
+    batch.update(_firestore.collection('households').doc(householdId), {
+      'currentActiveMonth': nextMonthString,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    for (final categoryDoc in categoriesSnapshot.docs) {
+      final currentData = categoryDoc.data();
+      final categoryName = currentData['name'] as String? ?? 'Sin nombre';
+      final monthlyLimit = (currentData['monthlyLimit'] as num?)?.toDouble() ?? 0.0;
+      
+      print('🔶 [Firestore] Reseteando categoría "$categoryName": spentThisMonth = \$0.00, balance = \$$monthlyLimit');
+      
+      batch.update(categoryDoc.reference, {
+        'spentThisMonth': 0.0,
+        'balance': monthlyLimit, // Balance = límite completo
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      resetCount++;
+    }
+
+    await batch.commit();
+    print('✅ [Firestore] CIERRE DE MES FORZADO COMPLETADO - $resetCount categorías reseteadas');
+    print('✅ [Firestore] Mes activo actualizado a: $nextMonthString');
+  }
+
   /// Recalcula el spentThisMonth de todas las categorías basándose en los gastos reales
   Future<void> recalculateCategorySpending(String householdId) async {
     print('🔄 [Firestore] Iniciando recalculateCategorySpending para household: $householdId');
     
-    // Obtener todos los gastos
+    // Obtener el mes activo del household (puede diferir del mes calendario)
+    final householdDoc = await _firestore
+        .collection('households')
+        .doc(householdId)
+        .get();
+    
+    final householdData = householdDoc.data();
+    var activeMonth = householdData?['currentActiveMonth'] as String? ?? householdData?['month'] as String?;
+    
+    // CRÍTICO: Usar el mes activo del household, NO el mes del sistema
+    if (activeMonth == null) {
+      // Fallback: usar el mes actual del sistema
+      final now = DateTime.now();
+      activeMonth = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+      print('⚠️ [Firestore] currentActiveMonth no definido, usando mes del sistema: $activeMonth');
+    } else {
+      print('📅 [Firestore] Filtrando gastos por MES ACTIVO: $activeMonth');
+    }
+    
+    
+    // Obtener SOLO los gastos del mes ACTIVO (filtrar por campo 'month')
     final expensesSnapshot = await _firestore
         .collection('households')
         .doc(householdId)
         .collection('expenses')
+        .where('month', isEqualTo: activeMonth)
         .get();
 
-    print('📊 [Firestore] Total de gastos encontrados: ${expensesSnapshot.docs.length}');
+    print('📊 [Firestore] Total de gastos del mes activo ($activeMonth) encontrados: ${expensesSnapshot.docs.length}');
 
-    // Calcular el total por categoría
+    // Calcular el total por categoría SOLO DEL MES ACTUAL
     final Map<String, double> categoryTotals = {};
     
     for (final expenseDoc in expensesSnapshot.docs) {
@@ -736,13 +897,16 @@ class FirestoreService {
       final totalSpent = categoryTotals[categoryId] ?? 0.0;
       final currentData = categoryDoc.data();
       final currentSpent = (currentData['spentThisMonth'] as num?)?.toDouble() ?? 0.0;
+      final monthlyLimit = (currentData['monthlyLimit'] as num?)?.toDouble() ?? 0.0;
+      final newBalance = monthlyLimit - totalSpent;
       
-      print('🔧 [Firestore] Actualizando categoría $categoryId: \$${currentSpent.toStringAsFixed(2)} -> \$${totalSpent.toStringAsFixed(2)}');
+      print('🔧 [Firestore] Actualizando categoría $categoryId: \$${currentSpent.toStringAsFixed(2)} -> \$${totalSpent.toStringAsFixed(2)} (Balance: \$${newBalance.toStringAsFixed(2)})');
       
       batch.update(
         categoryDoc.reference,
         {
           'spentThisMonth': totalSpent,
+          'balance': newBalance,
           'updatedAt': FieldValue.serverTimestamp(),
         },
       );
@@ -768,6 +932,13 @@ class FirestoreService {
     required DateTime date,
     String note = '',
   }) async {
+    // ✅ Obtener el mes ACTIVO del household para vincular el ingreso
+    final householdDoc = await _firestore.collection('households').doc(householdId).get();
+    final householdData = householdDoc.data();
+    final activeMonth = householdData?['currentActiveMonth'] as String? ?? householdData?['month'] as String?;
+    
+    print('📅 [Firestore] Agregando ingreso al mes ACTIVO: $activeMonth');
+
     final contributionRef = _firestore
         .collection('households')
         .doc(householdId)
@@ -782,6 +953,7 @@ class FirestoreService {
       date: date,
       note: note,
       createdAt: DateTime.now(),
+      month: activeMonth, // ✅ Vincular al mes ACTIVO
     );
 
     final batch = _firestore.batch();
@@ -896,27 +1068,62 @@ class FirestoreService {
   Stream<List<Contribution>> watchContributions(
     String householdId, {
     int? limit,
-  }) {
+    String? month,
+  }) async* {
     // 🧪 MODO TEST: Devolver contribuciones de prueba
     if (_isTestMode) {
       final contributions = MockData.getTestContributions();
-      return Stream.value(limit != null ? contributions.take(limit).toList() : contributions);
+      yield limit != null ? contributions.take(limit).toList() : contributions;
+      return;
+    }
+    
+    // ✅ Si no se especifica mes, usar currentActiveMonth del household
+    String? filterMonth = month;
+    if (filterMonth == null) {
+      final householdDoc = await _firestore.collection('households').doc(householdId).get();
+      final householdData = householdDoc.data();
+      filterMonth = householdData?['currentActiveMonth'] as String?;
+      
+      // ✅ Si currentActiveMonth no existe, inicializarlo con el mes del household
+      if (filterMonth == null) {
+        filterMonth = householdData?['month'] as String?;
+        if (filterMonth == null) {
+          final now = DateTime.now();
+          filterMonth = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+        }
+        
+        // Inicializar currentActiveMonth en Firestore
+        print('⚠️ [watchContributions] Inicializando currentActiveMonth: $filterMonth');
+        await _firestore.collection('households').doc(householdId).update({
+          'currentActiveMonth': filterMonth,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+      print('📅 [watchContributions] Filtrando por MES ACTIVO: $filterMonth');
+    } else {
+      print('📅 [watchContributions] Filtrando por mes especificado: $filterMonth');
     }
     
     var query = _firestore
         .collection('households')
         .doc(householdId)
         .collection('contributions')
-        .orderBy('date', descending: true);
+        .where('month', isEqualTo: filterMonth);  // ✅ FILTRO POR MES
 
-    if (limit != null) {
-      query = query.limit(limit);
-    }
-
-    return query.snapshots().map((snapshot) {
-      return snapshot.docs
+    yield* query.snapshots().map((snapshot) {
+      var contributions = snapshot.docs
           .map((doc) => Contribution.fromJson({'id': doc.id, ...doc.data()}))
           .toList();
+      
+      // Ordenar por fecha en memoria (descendente)
+      contributions.sort((a, b) => b.date.compareTo(a.date));
+      
+      // Aplicar límite si se especificó
+      if (limit != null && contributions.length > limit) {
+        contributions = contributions.sublist(0, limit);
+      }
+      
+      return contributions;
     });
   }
 
@@ -928,17 +1135,23 @@ class FirestoreService {
     required List<Member> members,
     required List<Category> categories,
   }) async {
-    final batch = _firestore.batch();
-
     print('📅 [CloseMonth] Iniciando cierre de mes ${household.month}');
 
-    // Create month history with detailed category info
+    // ✅ PROTECCIÓN: Verificar que el mes no haya sido cerrado previamente
     final historyRef = _firestore
         .collection('households')
         .doc(householdId)
         .collection('months')
         .doc(household.month);
 
+    final historyExists = await historyRef.get();
+    if (historyExists.exists) {
+      throw Exception('⚠️ El mes ${household.month} ya fue cerrado anteriormente. No se puede cerrar dos veces.');
+    }
+
+    final batch = _firestore.batch();
+
+    // Create month history with detailed category info
     final memberContributions = <String, double>{};
     for (final member in members) {
       memberContributions[member.uid] = member.contributedThisMonth;
@@ -950,9 +1163,8 @@ class FirestoreService {
     for (final category in categories) {
       categorySpending[category.id] = category.spentThisMonth;
       
-      // Guardar snapshot completo de la categoría
-      final totalAvailable = category.monthlyLimit + category.accumulatedBalance;
-      final balance = totalAvailable - category.spentThisMonth;
+      // Guardar snapshot de la categoría (sin considerar balance acumulado)
+      final balance = category.monthlyLimit - category.spentThisMonth;
       
       categoryDetails[category.id] = CategorySnapshot(
         id: category.id,
@@ -965,26 +1177,48 @@ class FirestoreService {
       );
     }
 
-    final history = MonthHistory(
-      id: household.month,
-      householdId: householdId,
-      monthTarget: household.monthTarget,
-      totalContributed: household.monthPool + household.carryOver,
-      totalSpent: categories.fold(0.0, (sum, cat) => sum + cat.spentThisMonth),
-      carryOverToNext: household.availableBalance,
-      closedAt: DateTime.now(),
-      memberContributions: memberContributions,
-      categorySpending: categorySpending,
-      categoryDetails: categoryDetails,
-    );
+    // Convertir categoryDetails manualmente para Firestore
+    final categoryDetailsJson = <String, dynamic>{};
+    categoryDetails.forEach((key, snapshot) {
+      categoryDetailsJson[key] = snapshot.toJson();
+    });
 
-    batch.set(historyRef, history.toJson());
+    // Crear JSON manualmente para evitar problemas de serialización
+    final historyJson = {
+      'id': household.month,
+      'householdId': householdId,
+      'monthTarget': household.monthTarget,
+      'totalContributed': household.monthPool + household.carryOver,
+      'totalSpent': categories.fold(0.0, (sum, cat) => sum + cat.spentThisMonth),
+      'carryOverToNext': household.availableBalance,
+      'closedAt': DateTime.now().toIso8601String(),
+      'memberContributions': memberContributions,
+      'categorySpending': categorySpending,
+      'categoryDetails': categoryDetailsJson,
+    };
+
+    print('📝 [CloseMonth] JSON generado: ${historyJson.keys.join(", ")}');
+    print('📊 [CloseMonth] CategoryDetails convertido: ${categoryDetailsJson.length} categorías');
+    
+    batch.set(historyRef, historyJson);
     print('✅ [CloseMonth] Histórico del mes guardado con ${categoryDetails.length} categorías');
+
+    // Calcular el siguiente mes
+    final currentDate = DateTime.now();
+    final currentMonthParts = household.month.split('-');
+    final year = int.parse(currentMonthParts[0]);
+    final month = int.parse(currentMonthParts[1]);
+    
+    final nextMonthDate = DateTime(year, month + 1, 1);
+    final nextMonth = '${nextMonthDate.year}-${nextMonthDate.month.toString().padLeft(2, '0')}';
+    
+    print('📅 [CloseMonth] Avanzando de ${household.month} a $nextMonth');
 
     // Update household for next month
     batch.update(
       _firestore.collection('households').doc(householdId),
       {
+        'month': nextMonth,  // ✅ Avanzar al siguiente mes
         'carryOver': household.availableBalance,
         'monthPool': 0.0,
         'updatedAt': FieldValue.serverTimestamp(),
@@ -1003,19 +1237,14 @@ class FirestoreService {
       );
     }
 
-    // Reset categories: calculate accumulated balance and reset spentThisMonth
+    // Reset categories: NO acumular balance, simplemente resetear
     for (final category in categories) {
-      // Balance de este mes = presupuesto total disponible - gastado
-      final totalAvailable = category.monthlyLimit + category.accumulatedBalance;
-      final currentBalance = totalAvailable - category.spentThisMonth;
-      
+      // El balance de la categoría NO se acumula mes a mes
+      // Solo se resetea el gasto a 0
       print('📊 [CloseMonth] ${category.name}:');
       print('   Límite mensual: \$${category.monthlyLimit}');
-      print('   Balance acumulado anterior: \$${category.accumulatedBalance}');
-      print('   Total disponible este mes: \$${totalAvailable}');
-      print('   Gastado: \$${category.spentThisMonth}');
-      print('   Balance actual: \$${currentBalance}');
-      print('   → Nuevo balance acumulado para próximo mes: \$${currentBalance}');
+      print('   Gastado este mes: \$${category.spentThisMonth}');
+      print('   → Reseteando para próximo mes (sin acumular balance)');
       
       batch.update(
         _firestore
@@ -1025,7 +1254,7 @@ class FirestoreService {
             .doc(category.id),
         {
           'spentThisMonth': 0.0,
-          'accumulatedBalance': currentBalance, // Acumular el sobrante/déficit
+          'accumulatedBalance': 0.0, // SIEMPRE 0, no acumular
         },
       );
     }
@@ -1033,10 +1262,147 @@ class FirestoreService {
     await batch.commit();
     print('✅ [CloseMonth] Mes cerrado exitosamente');
 
+    // 📦 Migrar registros sin mes al mes que se está cerrando
+    print('📦 [CloseMonth] Migrando registros sin mes asignado...');
+    await migrateUnassignedRecordsToMonth(householdId, household.month);
+    print('✅ [CloseMonth] Migración de registros completada');
+
     // Limpieza automática de registros antiguos (mantener solo últimos 3 meses)
     print('🧹 [CloseMonth] Iniciando limpieza de registros antiguos...');
     await _cleanupOldRecords(householdId);
     print('✅ [CloseMonth] Limpieza completada');
+  }
+
+  /// Migra todos los registros sin campo 'month' al mes especificado
+  /// Útil para registros legacy creados antes de implementar el campo month
+  Future<void> migrateUnassignedRecordsToMonth(String householdId, String targetMonth) async {
+    print('📦 [Migration] Iniciando migración de registros sin mes asignado...');
+    print('📦 [Migration] Mes destino: $targetMonth');
+    
+    int expensesMigrated = 0;
+    int contributionsMigrated = 0;
+
+    // Migrar gastos
+    final expensesSnapshot = await _firestore
+        .collection('households')
+        .doc(householdId)
+        .collection('expenses')
+        .get();
+
+    final expenseBatch = _firestore.batch();
+    for (var doc in expensesSnapshot.docs) {
+      final data = doc.data();
+      if (data['month'] == null) {
+        expenseBatch.update(doc.reference, {'month': targetMonth});
+        expensesMigrated++;
+      }
+    }
+    
+    if (expensesMigrated > 0) {
+      await expenseBatch.commit();
+      print('✅ [Migration] Migrados $expensesMigrated gastos');
+    }
+
+    // Migrar ingresos
+    final contributionsSnapshot = await _firestore
+        .collection('households')
+        .doc(householdId)
+        .collection('contributions')
+        .get();
+
+    final contributionBatch = _firestore.batch();
+    for (var doc in contributionsSnapshot.docs) {
+      final data = doc.data();
+      if (data['month'] == null) {
+        contributionBatch.update(doc.reference, {'month': targetMonth});
+        contributionsMigrated++;
+      }
+    }
+    
+    if (contributionsMigrated > 0) {
+      await contributionBatch.commit();
+      print('✅ [Migration] Migrados $contributionsMigrated ingresos');
+    }
+
+    print('🎉 [Migration] Migración completada: $expensesMigrated gastos + $contributionsMigrated ingresos');
+  }
+
+  /// Actualiza el mes actual del household (útil para avanzar manualmente)
+  Future<void> updateHouseholdMonth(String householdId, String newMonth) async {
+    print('📅 [UpdateMonth] Actualizando mes de household a: $newMonth');
+    
+    await _firestore.collection('households').doc(householdId).update({
+      'month': newMonth,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    
+    print('✅ [UpdateMonth] Mes actualizado exitosamente');
+  }
+
+  /// Resetea accumulatedBalance de todas las categorías a 0
+  /// Útil para limpiar datos legacy cuando se cambia la lógica
+  Future<void> resetCategoryBalances(String householdId) async {
+    print('🔄 [ResetBalances] Reseteando balances y gastos de categorías...');
+    
+    final categoriesSnapshot = await _firestore
+        .collection('households')
+        .doc(householdId)
+        .collection('categories')
+        .get();
+
+    final batch = _firestore.batch();
+    int count = 0;
+
+    for (var doc in categoriesSnapshot.docs) {
+      final data = doc.data();
+      final accumulatedBalance = data['accumulatedBalance'] ?? 0.0;
+      final spentThisMonth = data['spentThisMonth'] ?? 0.0;
+      
+      if (accumulatedBalance != 0.0 || spentThisMonth != 0.0) {
+        batch.update(doc.reference, {
+          'accumulatedBalance': 0.0,
+          'spentThisMonth': 0.0,
+        });
+        count++;
+        print('   📝 ${data['name']}: Gastado=\$${spentThisMonth} → \$0.00, Balance=\$${accumulatedBalance} → \$0.00');
+      }
+    }
+
+    if (count > 0) {
+      await batch.commit();
+      print('✅ [ResetBalances] $count categorías reseteadas');
+    } else {
+      print('✅ [ResetBalances] Todas las categorías ya están en 0');
+    }
+  }
+
+  /// Cuenta cuántos registros no tienen el campo month asignado
+  Future<int> countUnassignedRecords(String householdId) async {
+    int count = 0;
+
+    // Contar gastos sin month
+    final expensesSnapshot = await _firestore
+        .collection('households')
+        .doc(householdId)
+        .collection('expenses')
+        .get();
+
+    for (var doc in expensesSnapshot.docs) {
+      if (doc.data()['month'] == null) count++;
+    }
+
+    // Contar ingresos sin month
+    final contributionsSnapshot = await _firestore
+        .collection('households')
+        .doc(householdId)
+        .collection('contributions')
+        .get();
+
+    for (var doc in contributionsSnapshot.docs) {
+      if (doc.data()['month'] == null) count++;
+    }
+
+    return count;
   }
 
   /// Elimina gastos y aportaciones de hace más de 3 meses
@@ -1099,10 +1465,93 @@ class FirestoreService {
         .collection('months')
         .orderBy('closedAt', descending: true)
         .snapshots()
+        .handleError((error) {
+          print('❌ [watchMonthHistory] Error en stream: $error');
+        })
         .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => MonthHistory.fromJson({'id': doc.id, ...doc.data()}))
-          .toList();
+      try {
+        print('📅 [watchMonthHistory] Snapshot recibido con ${snapshot.docs.length} documentos');
+        
+        return snapshot.docs.map((doc) {
+          try {
+            final data = doc.data();
+            print('📅 [watchMonthHistory] Procesando mes: ${doc.id}');
+            
+            // Convertir TODOS los Maps anidados (Firestore Web issue)
+            
+            // 1. memberContributions: Map<String, double>
+            final memberContributionsRaw = data['memberContributions'];
+            final Map<String, double> memberContributionsConverted = {};
+            if (memberContributionsRaw != null && memberContributionsRaw is Map) {
+              memberContributionsRaw.forEach((key, value) {
+                memberContributionsConverted[key.toString()] = 
+                    (value is num) ? value.toDouble() : 0.0;
+              });
+            }
+            
+            // 2. categorySpending: Map<String, double>
+            final categorySpendingRaw = data['categorySpending'];
+            final Map<String, double> categorySpendingConverted = {};
+            if (categorySpendingRaw != null && categorySpendingRaw is Map) {
+              categorySpendingRaw.forEach((key, value) {
+                categorySpendingConverted[key.toString()] = 
+                    (value is num) ? value.toDouble() : 0.0;
+              });
+            }
+            
+            // 3. categoryDetails: Map<String, CategorySnapshot>
+            // CRÍTICO: Construir CategorySnapshot MANUALMENTE para evitar problemas con freezed en Web
+            final categoryDetailsRaw = data['categoryDetails'];
+            final Map<String, CategorySnapshot> categoryDetailsConverted = {};
+            if (categoryDetailsRaw != null && categoryDetailsRaw is Map) {
+              categoryDetailsRaw.forEach((key, value) {
+                if (value is Map) {
+                  // Crear CategorySnapshot directamente sin fromJson
+                  final snapshot = CategorySnapshot(
+                    id: value['id']?.toString() ?? '',
+                    name: value['name']?.toString() ?? '',
+                    icon: value['icon']?.toString() ?? '',
+                    color: value['color']?.toString() ?? '',
+                    monthlyLimit: (value['monthlyLimit'] is num) ? (value['monthlyLimit'] as num).toDouble() : 0.0,
+                    spent: (value['spent'] is num) ? (value['spent'] as num).toDouble() : 0.0,
+                    balance: (value['balance'] is num) ? (value['balance'] as num).toDouble() : 0.0,
+                  );
+                  categoryDetailsConverted[key.toString()] = snapshot;
+                }
+              });
+            }
+            
+            // Crear MonthHistory directamente sin fromJson para evitar problemas con freezed en Web
+            final result = MonthHistory(
+              id: doc.id,
+              householdId: data['householdId'],
+              monthTarget: (data['monthTarget'] is num) ? (data['monthTarget'] as num).toDouble() : 0.0,
+              totalContributed: (data['totalContributed'] is num) ? (data['totalContributed'] as num).toDouble() : 0.0,
+              totalSpent: (data['totalSpent'] is num) ? (data['totalSpent'] as num).toDouble() : 0.0,
+              carryOverToNext: (data['carryOverToNext'] is num) ? (data['carryOverToNext'] as num).toDouble() : 0.0,
+              closedAt: (data['closedAt'] is Timestamp) 
+                  ? (data['closedAt'] as Timestamp).toDate() 
+                  : (data['closedAt'] is DateTime) 
+                      ? data['closedAt'] as DateTime 
+                      : DateTime.parse(data['closedAt'].toString()),
+              memberContributions: memberContributionsConverted,
+              categorySpending: categorySpendingConverted,
+              categoryDetails: categoryDetailsConverted,
+            );
+            print('✅ [watchMonthHistory] MonthHistory creado exitosamente para ${doc.id}');
+            return result;
+          } catch (e, stackTrace) {
+            print('❌ [watchMonthHistory] Error deserializando mes ${doc.id}: $e');
+            print('📋 Stack trace: $stackTrace');
+            print('📄 Data completa: ${doc.data()}');
+            rethrow;
+          }
+        }).toList();
+      } catch (e, stackTrace) {
+        print('❌ [watchMonthHistory] Error en map general: $e');
+        print('📋 Stack trace: $stackTrace');
+        rethrow;
+      }
     });
   }
 
@@ -1118,7 +1567,66 @@ class FirestoreService {
 
       if (!doc.exists) return null;
 
-      return MonthHistory.fromJson({'id': doc.id, ...doc.data()!});
+      final data = doc.data()!;
+      
+      // Convertir TODOS los Maps anidados (Firestore Web issue)
+      
+      // 1. memberContributions: Map<String, double>
+      final memberContributionsRaw = data['memberContributions'];
+      final Map<String, double> memberContributionsConverted = {};
+      if (memberContributionsRaw != null && memberContributionsRaw is Map) {
+        memberContributionsRaw.forEach((key, value) {
+          memberContributionsConverted[key.toString()] = 
+              (value is num) ? value.toDouble() : 0.0;
+        });
+      }
+      
+      // 2. categorySpending: Map<String, double>
+      final categorySpendingRaw = data['categorySpending'];
+      final Map<String, double> categorySpendingConverted = {};
+      if (categorySpendingRaw != null && categorySpendingRaw is Map) {
+        categorySpendingRaw.forEach((key, value) {
+          categorySpendingConverted[key.toString()] = 
+              (value is num) ? value.toDouble() : 0.0;
+        });
+      }
+      
+      // 3. categoryDetails: Map<String, CategorySnapshot>
+      final categoryDetailsRaw = data['categoryDetails'];
+      final Map<String, CategorySnapshot> categoryDetailsConverted = {};
+      if (categoryDetailsRaw != null && categoryDetailsRaw is Map) {
+        categoryDetailsRaw.forEach((key, value) {
+          if (value is Map) {
+            final snapshot = CategorySnapshot(
+              id: value['id']?.toString() ?? '',
+              name: value['name']?.toString() ?? '',
+              icon: value['icon']?.toString() ?? '',
+              color: value['color']?.toString() ?? '',
+              monthlyLimit: (value['monthlyLimit'] is num) ? (value['monthlyLimit'] as num).toDouble() : 0.0,
+              spent: (value['spent'] is num) ? (value['spent'] as num).toDouble() : 0.0,
+              balance: (value['balance'] is num) ? (value['balance'] as num).toDouble() : 0.0,
+            );
+            categoryDetailsConverted[key.toString()] = snapshot;
+          }
+        });
+      }
+
+      return MonthHistory(
+        id: doc.id,
+        householdId: data['householdId'],
+        monthTarget: (data['monthTarget'] is num) ? (data['monthTarget'] as num).toDouble() : 0.0,
+        totalContributed: (data['totalContributed'] is num) ? (data['totalContributed'] as num).toDouble() : 0.0,
+        totalSpent: (data['totalSpent'] is num) ? (data['totalSpent'] as num).toDouble() : 0.0,
+        carryOverToNext: (data['carryOverToNext'] is num) ? (data['carryOverToNext'] as num).toDouble() : 0.0,
+        closedAt: (data['closedAt'] is Timestamp) 
+            ? (data['closedAt'] as Timestamp).toDate() 
+            : (data['closedAt'] is DateTime) 
+                ? data['closedAt'] as DateTime 
+                : DateTime.parse(data['closedAt'].toString()),
+        memberContributions: memberContributionsConverted,
+        categorySpending: categorySpendingConverted,
+        categoryDetails: categoryDetailsConverted,
+      );
     } catch (e) {
       print('❌ [getMonthHistory] Error: $e');
       return null;
@@ -1152,7 +1660,61 @@ class FirestoreService {
       final categoryTotals = <String, Map<String, dynamic>>{};
 
       for (final doc in snapshot.docs) {
-        final history = MonthHistory.fromJson({'id': doc.id, ...doc.data()});
+        // Convertir el documento manualmente (mismo proceso que getRecentMonths)
+        final data = doc.data();
+        
+        // Convertir Maps anidados
+        final memberContributionsRaw = data['memberContributions'];
+        final Map<String, double> memberContributionsConverted = {};
+        if (memberContributionsRaw != null && memberContributionsRaw is Map) {
+          memberContributionsRaw.forEach((key, value) {
+            memberContributionsConverted[key.toString()] = 
+                (value is num) ? value.toDouble() : 0.0;
+          });
+        }
+        
+        final categorySpendingRaw = data['categorySpending'];
+        final Map<String, double> categorySpendingConverted = {};
+        if (categorySpendingRaw != null && categorySpendingRaw is Map) {
+          categorySpendingRaw.forEach((key, value) {
+            categorySpendingConverted[key.toString()] = 
+                (value is num) ? value.toDouble() : 0.0;
+          });
+        }
+        
+        final categoryDetailsRaw = data['categoryDetails'];
+        final Map<String, CategorySnapshot> categoryDetailsConverted = {};
+        if (categoryDetailsRaw != null && categoryDetailsRaw is Map) {
+          categoryDetailsRaw.forEach((key, value) {
+            if (value is Map) {
+              final snapshot = CategorySnapshot(
+                id: value['id']?.toString() ?? '',
+                name: value['name']?.toString() ?? '',
+                icon: value['icon']?.toString() ?? '',
+                color: value['color']?.toString() ?? '',
+                monthlyLimit: (value['monthlyLimit'] is num) ? (value['monthlyLimit'] as num).toDouble() : 0.0,
+                spent: (value['spent'] is num) ? (value['spent'] as num).toDouble() : 0.0,
+                balance: (value['balance'] is num) ? (value['balance'] as num).toDouble() : 0.0,
+              );
+              categoryDetailsConverted[key.toString()] = snapshot;
+            }
+          });
+        }
+        
+        final history = MonthHistory(
+          id: doc.id,
+          householdId: data['householdId']?.toString() ?? '',
+          monthTarget: (data['monthTarget'] is num) ? (data['monthTarget'] as num).toDouble() : 0.0,
+          totalContributed: (data['totalContributed'] is num) ? (data['totalContributed'] as num).toDouble() : 0.0,
+          totalSpent: (data['totalSpent'] is num) ? (data['totalSpent'] as num).toDouble() : 0.0,
+          carryOverToNext: (data['carryOverToNext'] is num) ? (data['carryOverToNext'] as num).toDouble() : 0.0,
+          closedAt: (data['closedAt'] is Timestamp) 
+              ? (data['closedAt'] as Timestamp).toDate() 
+              : DateTime.parse(data['closedAt'].toString()),
+          memberContributions: memberContributionsConverted,
+          categorySpending: categorySpendingConverted,
+          categoryDetails: categoryDetailsConverted,
+        );
         
         totalSpent += history.totalSpent;
         totalContributed += history.totalContributed;
@@ -1209,6 +1771,7 @@ class FirestoreService {
   /// Obtiene los últimos N meses de histórico
   Future<List<MonthHistory>> getRecentMonths(String householdId, {int limit = 3}) async {
     try {
+      print('📅 [getRecentMonths] Obteniendo últimos $limit meses...');
       final snapshot = await _firestore
           .collection('households')
           .doc(householdId)
@@ -1217,9 +1780,85 @@ class FirestoreService {
           .limit(limit)
           .get();
 
-      return snapshot.docs
-          .map((doc) => MonthHistory.fromJson({'id': doc.id, ...doc.data()}))
-          .toList();
+      print('📅 [getRecentMonths] Encontrados ${snapshot.docs.length} documentos');
+
+      return snapshot.docs.map((doc) {
+        try {
+          final data = doc.data();
+          
+          // Convertir TODOS los Maps anidados (Firestore Web issue)
+          
+          // 1. memberContributions: Map<String, double>
+          final memberContributionsRaw = data['memberContributions'];
+          final Map<String, double> memberContributionsConverted = {};
+          if (memberContributionsRaw != null && memberContributionsRaw is Map) {
+            memberContributionsRaw.forEach((key, value) {
+              memberContributionsConverted[key.toString()] = 
+                  (value is num) ? value.toDouble() : 0.0;
+            });
+          }
+          
+          // 2. categorySpending: Map<String, double>
+          final categorySpendingRaw = data['categorySpending'];
+          final Map<String, double> categorySpendingConverted = {};
+          if (categorySpendingRaw != null && categorySpendingRaw is Map) {
+            categorySpendingRaw.forEach((key, value) {
+              categorySpendingConverted[key.toString()] = 
+                  (value is num) ? value.toDouble() : 0.0;
+            });
+          }
+          
+          // 3. categoryDetails: Map<String, CategorySnapshot>
+          // CRÍTICO: Construir CategorySnapshot MANUALMENTE para evitar problemas con freezed en Web
+          final categoryDetailsRaw = data['categoryDetails'];
+          final Map<String, CategorySnapshot> categoryDetailsConverted = {};
+          if (categoryDetailsRaw != null && categoryDetailsRaw is Map) {
+            categoryDetailsRaw.forEach((key, value) {
+              if (value is Map) {
+                // Crear CategorySnapshot directamente sin fromJson
+                final snapshot = CategorySnapshot(
+                  id: value['id']?.toString() ?? '',
+                  name: value['name']?.toString() ?? '',
+                  icon: value['icon']?.toString() ?? '',
+                  color: value['color']?.toString() ?? '',
+                  monthlyLimit: (value['monthlyLimit'] is num) ? (value['monthlyLimit'] as num).toDouble() : 0.0,
+                  spent: (value['spent'] is num) ? (value['spent'] as num).toDouble() : 0.0,
+                  balance: (value['balance'] is num) ? (value['balance'] as num).toDouble() : 0.0,
+                );
+                categoryDetailsConverted[key.toString()] = snapshot;
+              }
+            });
+          }
+          
+          // Crear MonthHistory directamente sin fromJson para evitar problemas con freezed en Web
+          final monthHistory = MonthHistory(
+            id: doc.id,
+            householdId: data['householdId'],
+            monthTarget: (data['monthTarget'] is num) ? (data['monthTarget'] as num).toDouble() : 0.0,
+            totalContributed: (data['totalContributed'] is num) ? (data['totalContributed'] as num).toDouble() : 0.0,
+            totalSpent: (data['totalSpent'] is num) ? (data['totalSpent'] as num).toDouble() : 0.0,
+            carryOverToNext: (data['carryOverToNext'] is num) ? (data['carryOverToNext'] as num).toDouble() : 0.0,
+            closedAt: (data['closedAt'] is Timestamp) 
+                ? (data['closedAt'] as Timestamp).toDate() 
+                : (data['closedAt'] is DateTime) 
+                    ? data['closedAt'] as DateTime 
+                    : DateTime.parse(data['closedAt'].toString()),
+            memberContributions: memberContributionsConverted,
+            categorySpending: categorySpendingConverted,
+            categoryDetails: categoryDetailsConverted,
+          );
+          
+          print('✅ [getRecentMonths] MonthHistory creado: ${monthHistory.id}');
+          print('   closedAt field: ${monthHistory.closedAt} (${monthHistory.closedAt.runtimeType})');
+          print('   categoryDetails: ${monthHistory.categoryDetails.runtimeType}');
+          
+          return monthHistory;
+        } catch (e, stackTrace) {
+          print('❌ [getRecentMonths] Error procesando mes ${doc.id}: $e');
+          print('📋 StackTrace: $stackTrace');
+          rethrow;
+        }
+      }).toList();
     } catch (e) {
       print('❌ [getRecentMonths] Error: $e');
       return [];
